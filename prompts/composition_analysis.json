@@ -1,0 +1,17 @@
+{
+  "id": "composition_analysis",
+  "name": "构图分析",
+  "type": "instruction",
+  "content": "请分析图片的构图和视觉设计原则。\n\n输出JSON格式：\n{{\n  \"composition_rules\": {{\n    \"rule_of_thirds\": \"是否使用三分法则\",\n    \"leading_lines\": \"引导线使用情况\",\n    \"symmetry\": \"对称性分析\",\n    \"balance\": \"视觉平衡（对称/不对称）\",\n    \"focal_point\": \"视觉焦点位置\"\n  }},\n  \"visual_elements\": {{\n    \"shapes\": [\"主要形状1\", \"主要形状2\"],\n    \"patterns\": [\"图案模式1\", \"图案模式2\"],\n    \"textures\": [\"纹理1\", \"纹理2\"],\n    \"contrast\": \"对比度分析\"\n  }},\n  \"framing\": {{\n    \"aspect_ratio\": \"画面比例\",\n    \"cropping\": \"裁剪方式\",\n    \"negative_space\": \"留白使用\",\n    \"borders\": \"边框处理\"\n  }},\n  \"technical_quality\": {{\n    \"sharpness\": \"清晰度\",\n    \"exposure\": \"曝光情况\", \n    \"noise_level\": \"噪点水平\",\n    \"overall_quality\": \"整体质量评价\"\n  }},\n  \"improvement_suggestions\": [\"改进建议1\", \"改进建议2\"]\n}}",
+  "variables": [],
+  "description": "专业构图和视觉设计分析",
+  "tags": [
+    "vision",
+    "composition",
+    "design"
+  ],
+  "difficulty": "complex",
+  "examples": [],
+  "created_at": "2025-09-06T17:09:40.761903",
+  "updated_at": "2025-09-06T17:09:40.761903"
+}

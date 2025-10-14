@@ -1,0 +1,32 @@
+# Include base requirements
+-r requirements.txt
+
+# GPU-accelerated PyTorch
+torch==2.1.1+cu121
+torchvision==0.16.1+cu121
+torchaudio==2.1.1+cu121
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# CUDA support for video processing
+cupy-cuda12x==12.3.0
+
+# GPU-accelerated computer vision
+opencv-contrib-python==4.8.1.78
+
+# GPU machine learning libraries
+tensorflow-gpu==2.14.0
+xgboost[gpu]==2.0.2
+
+# Neural network optimization
+tensorrt==8.6.1
+
+# GPU monitoring
+nvidia-ml-py==12.535.133
+pynvml==11.5.0
+
+# GPU-accelerated image processing
+cucim==23.10.0
+
+# Additional AI/ML models with GPU support
+ultralytics==8.0.206
+segment-anything==1.0

@@ -1,0 +1,221 @@
+groups:
+  - name: aura_render_alerts
+    rules:
+      # Application Health Alerts
+      - alert: AuraRenderDown
+        expr: up{job="aura-render"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: aura-render
+        annotations:
+          summary: "Aura Render application is down"
+          description: "Aura Render application has been down for more than 1 minute"
+
+      - alert: HighRequestLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="aura-render"}[5m])) > 2
+        for: 2m
+        labels:
+          severity: warning
+          service: aura-render
+        annotations:
+          summary: "High request latency detected"
+          description: "95th percentile latency is {{ $value }}s for more than 2 minutes"
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{job="aura-render",status=~"5.."}[5m]) / rate(http_requests_total{job="aura-render"}[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: critical
+          service: aura-render
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for more than 3 minutes"
+
+      # Video Generation Alerts
+      - alert: VideoGenerationQueueBacklog
+        expr: celery_queue_length{queue="video_generation"} > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: video-generation
+        annotations:
+          summary: "Video generation queue backlog"
+          description: "Video generation queue has {{ $value }} pending tasks for more than 5 minutes"
+
+      - alert: VideoGenerationFailureRate
+        expr: rate(video_generation_failures_total[10m]) / rate(video_generation_total[10m]) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+          service: video-generation
+        annotations:
+          summary: "High video generation failure rate"
+          description: "Video generation failure rate is {{ $value | humanizePercentage }} for more than 5 minutes"
+
+      - alert: LongRunningVideoGeneration
+        expr: video_generation_duration_seconds > 300
+        for: 0m
+        labels:
+          severity: warning
+          service: video-generation
+        annotations:
+          summary: "Long-running video generation detected"
+          description: "Video generation task {{ $labels.task_id }} has been running for {{ $value }}s"
+
+      # Resource Usage Alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }} for more than 5 minutes"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 3m
+        labels:
+          severity: critical
+          service: system
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }} for more than 3 minutes"
+
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 1m
+        labels:
+          severity: critical
+          service: system
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is {{ $value }}% available on {{ $labels.instance }}"
+
+      # GPU Alerts (if available)
+      - alert: HighGPUUtilization
+        expr: DCGM_FI_DEV_GPU_UTIL > 95
+        for: 10m
+        labels:
+          severity: warning
+          service: gpu
+        annotations:
+          summary: "High GPU utilization"
+          description: "GPU {{ $labels.gpu }} utilization is {{ $value }}% for more than 10 minutes"
+
+      - alert: GPUMemoryHigh
+        expr: DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          service: gpu
+        annotations:
+          summary: "High GPU memory usage"
+          description: "GPU {{ $labels.gpu }} memory usage is {{ $value }}% for more than 5 minutes"
+
+      - alert: GPUTemperatureHigh
+        expr: DCGM_FI_DEV_GPU_TEMP > 85
+        for: 2m
+        labels:
+          severity: critical
+          service: gpu
+        annotations:
+          summary: "High GPU temperature"
+          description: "GPU {{ $labels.gpu }} temperature is {{ $value }}°C for more than 2 minutes"
+
+      # Database Alerts
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL has been down for more than 1 minute"
+
+      - alert: PostgreSQLTooManyConnections
+        expr: pg_stat_database_numbackends / pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "PostgreSQL has too many connections"
+          description: "PostgreSQL connection usage is {{ $value }}% for more than 5 minutes"
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 1 minute"
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis memory usage is {{ $value }}% for more than 5 minutes"
+
+      # Worker Alerts
+      - alert: CeleryWorkerDown
+        expr: up{job="celery-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: worker
+        annotations:
+          summary: "Celery worker is down"
+          description: "Celery worker has been down for more than 2 minutes"
+
+      - alert: CeleryWorkerHighLoad
+        expr: celery_worker_load_average > 10
+        for: 10m
+        labels:
+          severity: warning
+          service: worker
+        annotations:
+          summary: "Celery worker high load"
+          description: "Celery worker load average is {{ $value }} for more than 10 minutes"
+
+  - name: business_metrics_alerts
+    rules:
+      # Business Logic Alerts
+      - alert: LowVideoGenerationRate
+        expr: rate(video_generation_total[1h]) < 5
+        for: 30m
+        labels:
+          severity: warning
+          service: business
+        annotations:
+          summary: "Low video generation rate"
+          description: "Video generation rate is {{ $value }} per hour for more than 30 minutes"
+
+      - alert: HighOptimizationFailureRate
+        expr: rate(ai_optimization_failures_total[15m]) / rate(ai_optimization_total[15m]) > 0.15
+        for: 10m
+        labels:
+          severity: warning
+          service: ai-optimization
+        annotations:
+          summary: "High AI optimization failure rate"
+          description: "AI optimization failure rate is {{ $value | humanizePercentage }} for more than 10 minutes"
+
+      - alert: QualityScoreDrop
+        expr: avg_over_time(video_quality_score[1h]) < 0.7
+        for: 30m
+        labels:
+          severity: warning
+          service: quality
+        annotations:
+          summary: "Video quality score drop detected"
+          description: "Average video quality score is {{ $value }} for more than 30 minutes"

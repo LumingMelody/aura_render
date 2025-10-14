@@ -1,0 +1,250 @@
+# Aura Render - Production Environment Configuration
+# 生产环境配置，注重性能、安全和稳定性
+
+app:
+  debug: false
+
+# API服务配置
+api:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  reload: false
+  workers: 4
+  enable_docs: false  # 生产环境关闭API文档
+
+  # CORS - 生产环境限制跨域
+  cors_origins:
+    - "https://aura-render.com"
+    - "https://www.aura-render.com"
+    - "https://app.aura-render.com"
+
+  # 安全配置
+  secret_key: "${AURA_SECRET_KEY}"
+  access_token_expire_minutes: 30
+  refresh_token_expire_days: 7
+
+  # 请求限制
+  max_request_size: 52428800  # 50MB
+  request_timeout: 120.0
+
+# 数据库配置 - 使用PostgreSQL集群
+database:
+  type: "postgresql"
+  host: "${AURA_DB_HOST}"
+  port: 5432
+  database: "${AURA_DB_NAME}"
+  username: "${AURA_DB_USER}"
+  password: "${AURA_DB_PASSWORD}"
+  pool_size: 20
+  max_overflow: 30
+  pool_timeout: 60
+  pool_recycle: 7200
+  ssl_mode: "require"
+  charset: "utf8"
+
+# 缓存配置 - 使用Redis集群
+cache:
+  type: "redis"
+  host: "${AURA_REDIS_HOST}"
+  port: 6379
+  db: 0
+  password: "${AURA_REDIS_PASSWORD}"
+  max_size: 10000
+  default_timeout: 7200
+  key_prefix: "aura:prod:"
+
+# 监控配置 - 生产环境全面监控
+monitoring:
+  enabled: true
+  metrics_enabled: true
+  alerts_enabled: true
+  metrics_interval: 60
+  metrics_retention_days: 90
+  alert_check_interval: 30
+  alert_retention_days: 30
+
+  # 严格的性能阈值
+  cpu_threshold: 70.0
+  memory_threshold: 80.0
+  disk_threshold: 85.0
+  error_rate_threshold: 1.0
+  response_time_threshold: 1000.0
+
+  # 外部监控集成
+  prometheus_enabled: true
+  prometheus_port: 9090
+  grafana_enabled: true
+  grafana_url: "https://monitoring.aura-render.com"
+
+# 安全配置 - 生产环境严格安全策略
+security:
+  jwt_secret_key: "${AURA_JWT_SECRET}"
+  jwt_algorithm: "HS256"
+  jwt_expire_minutes: 30
+
+  # 强密码策略
+  password_min_length: 12
+  password_require_numbers: true
+  password_require_symbols: true
+  password_require_uppercase: true
+
+  # 会话安全
+  session_timeout_minutes: 15
+  max_failed_login_attempts: 3
+  account_lockout_minutes: 30
+
+  # HTTPS强制
+  force_https: true
+  ssl_cert_path: "/etc/ssl/certs/aura-render.crt"
+  ssl_key_path: "/etc/ssl/private/aura-render.key"
+
+  # CSRF保护
+  csrf_protection: true
+  csrf_secret_key: "${AURA_CSRF_SECRET}"
+
+# 日志配置 - 结构化日志
+logging:
+  level: "WARNING"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  console_enabled: false  # 生产环境关闭控制台输出
+  console_colors: false
+  file_enabled: true
+  file_path: "/var/log/aura-render/app.log"
+  file_max_size: 104857600  # 100MB
+  file_backup_count: 10
+  json_format: true
+  include_traceback: false  # 安全考虑，不在日志中包含堆栈信息
+
+# 视频生成配置 - 生产环境高性能配置
+video_generation:
+  default_resolution: "1080p"
+  default_duration: 60
+  max_duration: 600
+  max_resolution: "4K"
+  max_file_size: 2147483648  # 2GB
+  default_quality: "high"
+  max_concurrent_generations: 20
+  queue_timeout: 7200  # 2小时
+  cleanup_temp_files: true
+
+# 素材配置
+materials:
+  upload_dir: "/data/uploads"
+  max_file_size: 104857600  # 100MB
+  cache_duration_days: 90
+  external_apis_enabled: true
+
+# 任务队列配置 - 使用Redis
+task_queue:
+  type: "redis"
+  redis_host: "${AURA_REDIS_HOST}"
+  redis_port: 6379
+  redis_db: 1
+  redis_password: "${AURA_REDIS_PASSWORD}"
+  worker_count: 8
+  max_retries: 3
+  retry_delay: 300  # 5分钟
+  task_timeout: 7200  # 2小时
+
+# 外部API配置 - 生产环境真实API密钥
+external_apis:
+  pexels:
+    api_key: "${AURA_PEXELS_API_KEY}"
+    rate_limit: 200
+    timeout: 60
+
+  pixabay:
+    api_key: "${AURA_PIXABAY_API_KEY}"
+    rate_limit: 100
+    timeout: 60
+
+  freesound:
+    api_key: "${AURA_FREESOUND_API_KEY}"
+    rate_limit: 50
+    timeout: 60
+
+  azure_tts:
+    subscription_key: "${AURA_AZURE_TTS_KEY}"
+    region: "${AURA_AZURE_REGION}"
+    timeout: 120
+
+  openai:
+    api_key: "${AURA_OPENAI_API_KEY}"
+    timeout: 120
+
+  stability_ai:
+    api_key: "${AURA_STABILITY_API_KEY}"
+    timeout: 300
+
+# 性能优化配置
+performance:
+  # 连接池优化
+  connection_pool_size: 50
+  connection_pool_timeout: 30
+
+  # 缓存优化
+  enable_query_cache: true
+  query_cache_size: 1000
+  enable_response_cache: true
+  response_cache_timeout: 300
+
+  # 压缩配置
+  enable_gzip: true
+  gzip_min_size: 1024
+
+  # 静态文件服务
+  enable_static_file_cache: true
+  static_file_max_age: 86400  # 24小时
+
+# 备份配置
+backup:
+  enabled: true
+  database_backup_enabled: true
+  database_backup_schedule: "0 2 * * *"  # 每天凌晨2点
+  database_backup_retention_days: 30
+
+  file_backup_enabled: true
+  file_backup_schedule: "0 3 * * *"  # 每天凌晨3点
+  file_backup_retention_days: 30
+
+  backup_location: "${AURA_BACKUP_LOCATION}"
+
+# 告警配置
+alerts:
+  # 邮件告警
+  email_enabled: true
+  smtp_host: "${AURA_SMTP_HOST}"
+  smtp_port: 587
+  smtp_username: "${AURA_SMTP_USER}"
+  smtp_password: "${AURA_SMTP_PASSWORD}"
+  alert_emails:
+    - "admin@aura-render.com"
+    - "ops@aura-render.com"
+
+  # Slack告警
+  slack_enabled: true
+  slack_webhook_url: "${AURA_SLACK_WEBHOOK}"
+  slack_channel: "#alerts"
+
+  # 告警规则
+  alert_rules:
+    - name: "high_cpu_usage"
+      condition: "cpu_usage > 80"
+      duration: "5m"
+      severity: "warning"
+
+    - name: "high_memory_usage"
+      condition: "memory_usage > 85"
+      duration: "5m"
+      severity: "warning"
+
+    - name: "high_error_rate"
+      condition: "error_rate > 5"
+      duration: "2m"
+      severity: "critical"
+
+    - name: "service_down"
+      condition: "health_check = false"
+      duration: "1m"
+      severity: "critical"

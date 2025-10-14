@@ -1,0 +1,156 @@
+global:
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'alerts@aurarender.com'
+  smtp_auth_username: '${SMTP_USERNAME}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+
+route:
+  group_by: ['alertname', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 4h
+  receiver: 'default'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 5s
+      repeat_interval: 1h
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      repeat_interval: 8h
+    - match:
+        service: video-generation
+      receiver: 'video-generation-alerts'
+    - match:
+        service: ai-optimization
+      receiver: 'ai-optimization-alerts'
+
+receivers:
+  - name: 'default'
+    email_configs:
+      - to: 'ops@aurarender.com'
+        subject: '[Aura Render] Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          Alert: {{ .GroupLabels.alertname }}
+          Service: {{ .GroupLabels.service }}
+          Severity: {{ .GroupLabels.severity }}
+          
+          {{ range .Alerts }}
+          Summary: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          {{ end }}
+
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'ops@aurarender.com,engineering@aurarender.com'
+        subject: '[CRITICAL] Aura Render Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          🚨 CRITICAL ALERT 🚨
+          
+          Alert: {{ .GroupLabels.alertname }}
+          Service: {{ .GroupLabels.service }}
+          Severity: {{ .GroupLabels.severity }}
+          Time: {{ .CommonLabels.alertname }}
+          
+          {{ range .Alerts }}
+          Summary: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Status: {{ .Status }}
+          {{ end }}
+          
+          Please investigate immediately.
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#alerts-critical'
+        title: 'Critical Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          🚨 **CRITICAL ALERT** 🚨
+          **Service:** {{ .GroupLabels.service }}
+          **Alert:** {{ .GroupLabels.alertname }}
+          {{ range .Alerts }}**Summary:** {{ .Annotations.summary }}
+          **Description:** {{ .Annotations.description }}{{ end }}
+        color: 'danger'
+
+  - name: 'warning-alerts'
+    email_configs:
+      - to: 'ops@aurarender.com'
+        subject: '[WARNING] Aura Render Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          ⚠️  WARNING ALERT ⚠️
+          
+          Alert: {{ .GroupLabels.alertname }}
+          Service: {{ .GroupLabels.service }}
+          Severity: {{ .GroupLabels.severity }}
+          
+          {{ range .Alerts }}
+          Summary: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          {{ end }}
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#alerts-warning'
+        title: 'Warning: {{ .GroupLabels.alertname }}'
+        text: |
+          ⚠️  **WARNING**
+          **Service:** {{ .GroupLabels.service }}
+          **Alert:** {{ .GroupLabels.alertname }}
+          {{ range .Alerts }}**Summary:** {{ .Annotations.summary }}{{ end }}
+        color: 'warning'
+
+  - name: 'video-generation-alerts'
+    email_configs:
+      - to: 'video-team@aurarender.com'
+        subject: '[Video Generation] Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          📹 VIDEO GENERATION ALERT
+          
+          Alert: {{ .GroupLabels.alertname }}
+          Severity: {{ .GroupLabels.severity }}
+          
+          {{ range .Alerts }}
+          Summary: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          {{ end }}
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#video-generation'
+        title: 'Video Generation Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          📹 **Video Generation Issue**
+          {{ range .Alerts }}**Summary:** {{ .Annotations.summary }}
+          **Description:** {{ .Annotations.description }}{{ end }}
+
+  - name: 'ai-optimization-alerts'
+    email_configs:
+      - to: 'ai-team@aurarender.com'
+        subject: '[AI Optimization] Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          🤖 AI OPTIMIZATION ALERT
+          
+          Alert: {{ .GroupLabels.alertname }}
+          Severity: {{ .GroupLabels.severity }}
+          
+          {{ range .Alerts }}
+          Summary: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          {{ end }}
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#ai-optimization'
+        title: 'AI Optimization Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          🤖 **AI Optimization Issue**
+          {{ range .Alerts }}**Summary:** {{ .Annotations.summary }}
+          **Description:** {{ .Annotations.description }}{{ end }}
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'service']
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'

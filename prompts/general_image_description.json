@@ -1,0 +1,17 @@
+{
+  "id": "general_image_description",
+  "name": "通用图像描述",
+  "type": "instruction",
+  "content": "请仔细观察这张图片，提供详细的描述。\n\n请按以下结构输出JSON格式：\n{{\n  \"overall_description\": \"整体描述\",\n  \"main_subjects\": [\"主要对象1\", \"主要对象2\"],\n  \"environment\": \"环境和背景\",\n  \"colors\": [\"主要颜色1\", \"主要颜色2\"],\n  \"lighting\": \"光线情况\",\n  \"mood\": \"整体氛围\",\n  \"composition\": \"构图特点\",\n  \"details\": [\"细节1\", \"细节2\"]\n}}\n\n要求：\n1. 描述要准确、详细\n2. 用中文输出\n3. 严格按照JSON格式",
+  "variables": [],
+  "description": "生成图像的通用描述",
+  "tags": [
+    "vision",
+    "description",
+    "general"
+  ],
+  "difficulty": "simple",
+  "examples": [],
+  "created_at": "2025-09-06T17:09:40.761889",
+  "updated_at": "2025-09-06T17:09:40.761890"
+}

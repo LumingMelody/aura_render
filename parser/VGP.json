@@ -1,0 +1,308 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MultiTrackVideoEditTimeline",
+  "description": "A standardized JSON format for representing a multi-track video editing timeline.",
+  "type": "object",
+  "required": ["version", "timeline"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Version of the timeline format specification (e.g., '1.0.0').",
+      "default": "1.0.0"
+    },
+    "name": {
+      "type": "string",
+      "description": "Name or title of the project/timeline.",
+      "default": "Untitled Project"
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional description of the project/timeline."
+    },
+    "duration": {
+      "type": "number",
+      "description": "Total duration of the timeline in seconds.",
+      "minimum": 0
+    },
+    "fps": {
+      "type": "number",
+      "description": "Frames per second of the timeline.",
+      "minimum": 1,
+      "default": 24
+    },
+    "resolution": {
+      "type": "object",
+      "description": "Output resolution of the timeline.",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "timeline": {
+      "type": "object",
+      "description": "The main timeline container.",
+      "required": ["tracks"],
+      "properties": {
+        "tracks": {
+          "type": "array",
+          "description": "List of tracks in the timeline.",
+          "items": {
+            "type": "object",
+            "required": ["id", "type", "clips"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique identifier for this track."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["video", "audio", "subtitle", "overlay", "data"],
+                "description": "Type of track."
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name for the track."
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether the track is active and rendered.",
+                "default": true
+              },
+              "locked": {
+                "type": "boolean",
+                "description": "Whether the track is locked from editing.",
+                "default": false
+              },
+              "volume": {
+                "type": "number",
+                "description": "Track-level volume (0.0 to 1.0 for audio, 0.0 to 1.0 for opacity for video/overlay).",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 1.0
+              },
+              "clips": {
+                "type": "array",
+                "description": "List of media clips on this track.",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "source", "start", "duration"],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Unique identifier for this clip."
+                    },
+                    "source": {
+                      "type": "object",
+                      "description": "Reference to the source media.",
+                      "required": ["id"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Unique identifier of the source media asset."
+                        },
+                        "path": {
+                          "type": "string",
+                          "description": "File path or URL to the source media (optional, for local reference)."
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": ["video", "audio", "image", "color", "text"],
+                          "description": "Type of source media."
+                        },
+                        "duration": {
+                          "type": "number",
+                          "description": "Duration of the source media in seconds.",
+                          "minimum": 0
+                        },
+                        "resolution": {
+                          "type": "object",
+                          "description": "Resolution of the source media (if applicable).",
+                          "properties": {
+                            "width": { "type": "integer", "minimum": 1 },
+                            "height": { "type": "integer", "minimum": 1 }
+                          }
+                        },
+                        "fps": {
+                          "type": "number",
+                          "description": "FPS of the source media (if applicable).",
+                          "minimum": 1
+                        }
+                      }
+                    },
+                    "start": {
+                      "type": "number",
+                      "description": "Start time of the clip on the timeline (in seconds).",
+                      "minimum": 0
+                    },
+                    "duration": {
+                      "type": "number",
+                      "description": "Duration the clip occupies on the timeline (in seconds).",
+                      "minimum": 0
+                    },
+                    "in": {
+                      "type": "number",
+                      "description": "In-point of the source media used (trim start, in seconds). If omitted, defaults to 0.",
+                      "minimum": 0
+                    },
+                    "out": {
+                      "type": "number",
+                      "description": "Out-point of the source media used (trim end, in seconds). If omitted, defaults to source.duration.",
+                      "minimum": 0
+                    },
+                    "speed": {
+                      "type": "number",
+                      "description": "Playback speed multiplier (e.g., 1.0 = normal, 0.5 = half speed, 2.0 = double speed).",
+                      "default": 1.0
+                    },
+                    "reverse": {
+                      "type": "boolean",
+                      "description": "Whether the clip plays in reverse.",
+                      "default": false
+                    },
+                    "enabled": {
+                      "type": "boolean",
+                      "description": "Whether this clip is active and rendered.",
+                      "default": true
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Display name for the clip."
+                    },
+                    "effects": {
+                      "type": "array",
+                      "description": "List of effects applied to this clip.",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "type"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Unique identifier for this effect instance."
+                          },
+                          "type": {
+                            "type": "string",
+                            "description": "Type of effect (e.g., 'color_correction', 'blur', 'scale', 'position', 'crop', 'noise_reduction')."
+                          },
+                          "enabled": {
+                            "type": "boolean",
+                            "default": true
+                          },
+                          "parameters": {
+                            "type": "object",
+                            "description": "Key-value pairs defining effect parameters. Structure is effect-type specific.",
+                            "additionalProperties": true
+                          },
+                          "keyframes": {
+                            "type": "array",
+                            "description": "Keyframe data for animating effect parameters over time.",
+                            "items": {
+                              "type": "object",
+                              "required": ["time", "parameters"],
+                              "properties": {
+                                "time": {
+                                  "type": "number",
+                                  "description": "Time relative to the *clip start* (in seconds) when this keyframe occurs.",
+                                  "minimum": 0
+                                },
+                                "parameters": {
+                                  "type": "object",
+                                  "description": "Effect parameters at this keyframe.",
+                                  "additionalProperties": true
+                                },
+                                "interpolation": {
+                                  "type": "string",
+                                  "enum": ["linear", "ease_in", "ease_out", "hold", "bezier"],
+                                  "description": "Interpolation method between this keyframe and the next.",
+                                  "default": "linear"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "transition_in": {
+                      "type": "object",
+                      "description": "Transition applied at the *start* of this clip (overlapping with previous clip on the same track).",
+                      "required": ["type", "duration"],
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["fade", "dissolve", "wipe", "slide", "cube", "zoom"],
+                          "description": "Type of transition."
+                        },
+                        "duration": {
+                          "type": "number",
+                          "description": "Duration of the transition (in seconds). Must be <= min(this_clip.start_offset, prev_clip.duration_offset).",
+                          "minimum": 0
+                        },
+                        "parameters": {
+                          "type": "object",
+                          "description": "Transition-specific parameters.",
+                          "additionalProperties": true
+                        }
+                      }
+                    },
+                    "transition_out": {
+                      "type": "object",
+                      "description": "Transition applied at the *end* of this clip (overlapping with next clip on the same track).",
+                      "required": ["type", "duration"],
+                      "properties": {
+                        "type": "string",
+                        "enum": ["fade", "dissolve", "wipe", "slide", "cube", "zoom"],
+                        "description": "Type of transition."
+                        },
+                        "duration": {
+                          "type": "number",
+                          "description": "Duration of the transition (in seconds). Must be <= min(this_clip.duration_offset, next_clip.start_offset).",
+                          "minimum": 0
+                        },
+                        "parameters": {
+                          "type": "object",
+                          "description": "Transition-specific parameters.",
+                          "additionalProperties": true
+                        }
+                      }
+                    },
+                    "markers": {
+                      "type": "array",
+                      "description": "Markers or comments attached to specific points within this clip.",
+                      "items": {
+                        "type": "object",
+                        "required": ["time", "label"],
+                        "properties": {
+                          "time": {
+                            "type": "number",
+                            "description": "Time relative to the *clip start* (in seconds) for the marker.",
+                            "minimum": 0
+                          },
+                          "label": {
+                            "type": "string",
+                            "description": "Label or name of the marker."
+                          },
+                          "color": {
+                            "type": "string",
+                            "description": "Color of the marker (e.g., '#FF0000', 'red')."
+                          },
+                          "note": {
+                            "type": "string",
+                            "description": "Optional note or comment for the marker."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata about the timeline.",
+          "additionalProperties": true
+        }
+      }
+    }
+  }

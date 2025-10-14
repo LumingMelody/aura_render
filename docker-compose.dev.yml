@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  # Development application with hot reload
+  app:
+    build:
+      context: .
+      target: development
+    ports:
+      - "8000:8000"
+      - "5678:5678"  # Debug port
+    environment:
+      - DATABASE_URL=sqlite:///./aura_render.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ENV=development
+      - LOG_LEVEL=debug
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+      - app_temp:/app/temp
+      - app_output:/app/output
+      - app_logs:/app/logs
+    depends_on:
+      - redis
+    restart: unless-stopped
+    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload --log-level debug
+
+  # Redis for development
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  # Development worker
+  worker:
+    build:
+      context: .
+      target: development
+    environment:
+      - DATABASE_URL=sqlite:///./aura_render.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ENV=development
+      - LOG_LEVEL=debug
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+      - app_temp:/app/temp
+      - app_output:/app/output
+      - app_logs:/app/logs
+    depends_on:
+      - redis
+    restart: unless-stopped
+    command: celery -A task_queue.celery_app worker --loglevel=debug --concurrency=1
+
+  # Flower for monitoring
+  flower:
+    build:
+      context: .
+      target: development
+    command: celery -A task_queue.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+
+  # Database admin (optional)
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgres
+    depends_on:
+      - postgres
+
+  # Development database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=aura_render_dev
+      - POSTGRES_USER=dev_user
+      - POSTGRES_PASSWORD=dev_password
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+
+  # Jupyter for data analysis and testing
+  jupyter:
+    build:
+      context: .
+      target: development
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=aura_render_dev
+    volumes:
+      - .:/app
+      - jupyter_data:/home/appuser/.jupyter
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='aura_render_dev'
+
+volumes:
+  app_temp:
+  app_output:
+  app_logs:
+  redis_data:
+  postgres_dev_data:
+  jupyter_data:

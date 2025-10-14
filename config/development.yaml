@@ -1,0 +1,127 @@
+# Aura Render - Development Environment Configuration
+# 开发环境配置，适用于本地开发和调试
+
+app:
+  debug: true
+
+# API服务配置
+api:
+  host: "127.0.0.1"
+  port: 8000
+  debug: true
+  reload: true
+  workers: 1
+  enable_docs: true
+
+# 数据库配置 - 使用SQLite便于开发
+database:
+  type: "sqlite"
+  database: "aura_render_dev.db"
+
+# 缓存配置 - 使用内存缓存
+cache:
+  type: "memory"
+  max_size: 500
+
+# 监控配置
+monitoring:
+  enabled: true
+  metrics_enabled: true
+  alerts_enabled: false  # 开发环境关闭告警
+  metrics_interval: 30
+  prometheus_enabled: false
+  grafana_enabled: false
+
+# 安全配置 - 开发环境使用较宽松的安全策略
+security:
+  jwt_secret_key: "dev-jwt-secret-key-not-for-production"
+  jwt_expire_minutes: 480  # 8小时，便于开发
+  password_min_length: 4
+  password_require_numbers: false
+  password_require_symbols: false
+  password_require_uppercase: false
+  session_timeout_minutes: 480
+  max_failed_login_attempts: 10
+  force_https: false
+  csrf_protection: false
+
+# 日志配置
+logging:
+  level: "DEBUG"
+  console_enabled: true
+  console_colors: true
+  file_enabled: true
+  file_path: "logs/dev.log"
+  json_format: false
+  include_traceback: true
+
+# 视频生成配置 - 开发环境限制
+video_generation:
+  default_resolution: "720p"
+  default_duration: 30
+  max_duration: 120  # 2分钟
+  max_resolution: "1080p"
+  max_file_size: 536870912  # 512MB
+  default_quality: "medium"
+  max_concurrent_generations: 2
+  queue_timeout: 1800  # 30分钟
+  cleanup_temp_files: false  # 保留临时文件便于调试
+
+# 素材配置
+materials:
+  max_file_size: 52428800  # 50MB
+  cache_duration_days: 7
+  external_apis_enabled: true
+
+# 任务队列配置
+task_queue:
+  type: "memory"
+  worker_count: 1
+  max_retries: 1
+  retry_delay: 30
+  task_timeout: 1800
+
+# 外部API配置 - 开发环境使用测试配置
+external_apis:
+  pexels:
+    rate_limit: 50
+    timeout: 15
+
+  pixabay:
+    rate_limit: 20
+    timeout: 15
+
+  freesound:
+    rate_limit: 10
+    timeout: 15
+
+  azure_tts:
+    timeout: 30
+
+  openai:
+    timeout: 30
+
+  stability_ai:
+    timeout: 60
+
+# 开发工具配置
+dev_tools:
+  # 热重载配置
+  auto_reload: true
+  reload_dirs:
+    - "."
+  reload_excludes:
+    - "logs"
+    - "temp"
+    - "output"
+    - "__pycache__"
+    - ".git"
+
+  # 调试配置
+  enable_profiling: true
+  profile_output_dir: "profiles"
+
+  # 测试数据配置
+  use_mock_apis: false
+  mock_generation_delay: 5  # 秒
+  mock_material_count: 10

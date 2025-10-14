@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aura Render - 管理控制台</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    
+    <style>
+        .admin-sidebar {
+            background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+            min-height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 250px;
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+        
+        .admin-content {
+            margin-left: 250px;
+            padding: 20px;
+            background: #f8fafc;
+            min-height: 100vh;
+        }
+        
+        .sidebar-brand {
+            padding: 1.5rem;
+            color: white;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .sidebar-nav {
+            padding: 1rem 0;
+        }
+        
+        .nav-item {
+            margin: 0.25rem 0;
+        }
+        
+        .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+        
+        .nav-link:hover,
+        .nav-link.active {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .nav-link i {
+            margin-right: 0.75rem;
+            width: 1.25rem;
+            text-align: center;
+        }
+        
+        .metric-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: none;
+            transition: transform 0.2s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e40af;
+        }
+        
+        .metric-label {
+            color: #6b7280;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .metric-change {
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+        }
+        
+        .metric-change.positive {
+            color: #059669;
+        }
+        
+        .metric-change.negative {
+            color: #dc2626;
+        }
+        
+        .chart-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        
+        .status-online {
+            background-color: #10b981;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-offline {
+            background-color: #ef4444;
+        }
+        
+        .status-warning {
+            background-color: #f59e0b;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .log-entry {
+            background: white;
+            border-left: 4px solid #e5e7eb;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .log-entry.error {
+            border-left-color: #ef4444;
+        }
+        
+        .log-entry.warning {
+            border-left-color: #f59e0b;
+        }
+        
+        .log-entry.info {
+            border-left-color: #3b82f6;
+        }
+        
+        .log-entry.success {
+            border-left-color: #10b981;
+        }
+        
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #10b981;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            z-index: 1001;
+        }
+        
+        .connection-status.disconnected {
+            background: #ef4444;
+        }
+        
+        @media (max-width: 768px) {
+            .admin-sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .admin-sidebar.show {
+                transform: translateX(0);
+            }
+            
+            .admin-content {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Connection Status -->
+    <div id="connectionStatus" class="connection-status">
+        <i class="fas fa-wifi"></i> 连接中...
+    </div>
+    
+    <!-- Sidebar -->
+    <div class="admin-sidebar" id="adminSidebar">
+        <div class="sidebar-brand">
+            <h4><i class="fas fa-video"></i> Aura Render</h4>
+            <small>管理控制台</small>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <a class="nav-link active" href="#dashboard" data-section="dashboard">
+                        <i class="fas fa-tachometer-alt"></i> 控制台
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#analytics" data-section="analytics">
+                        <i class="fas fa-chart-bar"></i> 分析统计
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#tasks" data-section="tasks">
+                        <i class="fas fa-tasks"></i> 任务管理
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#batch" data-section="batch">
+                        <i class="fas fa-layer-group"></i> 批处理
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#users" data-section="users">
+                        <i class="fas fa-users"></i> 用户管理
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#templates" data-section="templates">
+                        <i class="fas fa-th-large"></i> 模板管理
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#system" data-section="system">
+                        <i class="fas fa-server"></i> 系统监控
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#logs" data-section="logs">
+                        <i class="fas fa-file-alt"></i> 系统日志
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="admin-content">
+        <!-- Dashboard Section -->
+        <div id="dashboard" class="content-section">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-tachometer-alt"></i> 系统概览</h2>
+                <div>
+                    <button class="btn btn-outline-primary btn-sm" onclick="refreshDashboard()">
+                        <i class="fas fa-sync-alt"></i> 刷新
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Key Metrics -->
+            <div class="row">
+                <div class="col-xl-3 col-md-6">
+                    <div class="metric-card">
+                        <div class="d-flex align-items-center">
+                            <div>
+                                <div class="metric-value" id="totalVideos">0</div>
+                                <div class="metric-label">总视频数</div>
+                                <div class="metric-change positive" id="videoChange">+0% 较昨日</div>
+                            </div>
+                            <div class="ms-auto">
+                                <i class="fas fa-video fa-2x text-primary"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6">
+                    <div class="metric-card">
+                        <div class="d-flex align-items-center">
+                            <div>
+                                <div class="metric-value" id="activeUsers">0</div>
+                                <div class="metric-label">活跃用户</div>
+                                <div class="metric-change positive" id="userChange">+0% 较昨日</div>
+                            </div>
+                            <div class="ms-auto">
+                                <i class="fas fa-users fa-2x text-success"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6">
+                    <div class="metric-card">
+                        <div class="d-flex align-items-center">
+                            <div>
+                                <div class="metric-value" id="systemLoad">0%</div>
+                                <div class="metric-label">系统负载</div>
+                                <div class="metric-change" id="loadChange">CPU 使用率</div>
+                            </div>
+                            <div class="ms-auto">
+                                <i class="fas fa-server fa-2x text-warning"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6">
+                    <div class="metric-card">
+                        <div class="d-flex align-items-center">
+                            <div>
+                                <div class="metric-value" id="successRate">0%</div>
+                                <div class="metric-label">成功率</div>
+                                <div class="metric-change positive" id="successChange">视频生成成功率</div>
+                            </div>
+                            <div class="ms-auto">
+                                <i class="fas fa-check-circle fa-2x text-info"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Charts -->
+            <div class="row">
+                <div class="col-xl-8">
+                    <div class="chart-container">
+                        <h5 class="mb-3">视频生成趋势</h5>
+                        <canvas id="videoTrendChart" height="100"></canvas>
+                    </div>
+                </div>
+                
+                <div class="col-xl-4">
+                    <div class="chart-container">
+                        <h5 class="mb-3">系统状态</h5>
+                        <div id="systemStatus">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span><span class="status-indicator status-online"></span> API 服务</span>
+                                <span class="badge bg-success">运行中</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span><span class="status-indicator status-online"></span> 数据库</span>
+                                <span class="badge bg-success">运行中</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span><span class="status-indicator status-warning"></span> Redis</span>
+                                <span class="badge bg-warning">警告</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span><span class="status-indicator status-online"></span> Celery</span>
+                                <span class="badge bg-success">运行中</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span><span class="status-indicator status-online"></span> WebSocket</span>
+                                <span class="badge bg-success">运行中</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Activities -->
+            <div class="chart-container">
+                <h5 class="mb-3">最近活动</h5>
+                <div id="recentActivities">
+                    <!-- Activities will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Analytics Section -->
+        <div id="analytics" class="content-section" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-chart-bar"></i> 分析统计</h2>
+                <div>
+                    <select class="form-select d-inline-block" style="width: auto;" id="analyticsTimeRange">
+                        <option value="24">最近24小时</option>
+                        <option value="168">最近7天</option>
+                        <option value="720">最近30天</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-lg-6">
+                    <div class="chart-container">
+                        <h5 class="mb-3">视频生成统计</h5>
+                        <canvas id="videoAnalyticsChart" height="200"></canvas>
+                    </div>
+                </div>
+                
+                <div class="col-lg-6">
+                    <div class="chart-container">
+                        <h5 class="mb-3">用户活跃度</h5>
+                        <canvas id="userActivityChart" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-lg-12">
+                    <div class="chart-container">
+                        <h5 class="mb-3">性能指标</h5>
+                        <canvas id="performanceChart" height="150"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- System Monitoring Section -->
+        <div id="system" class="content-section" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-server"></i> 系统监控</h2>
+                <div>
+                    <span class="badge bg-success">实时监控</span>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-lg-4">
+                    <div class="metric-card">
+                        <h6>CPU 使用率</h6>
+                        <div class="progress mb-2">
+                            <div id="cpuProgress" class="progress-bar bg-primary" style="width: 0%"></div>
+                        </div>
+                        <small id="cpuText">0%</small>
+                    </div>
+                </div>
+                
+                <div class="col-lg-4">
+                    <div class="metric-card">
+                        <h6>内存使用率</h6>
+                        <div class="progress mb-2">
+                            <div id="memoryProgress" class="progress-bar bg-success" style="width: 0%"></div>
+                        </div>
+                        <small id="memoryText">0%</small>
+                    </div>
+                </div>
+                
+                <div class="col-lg-4">
+                    <div class="metric-card">
+                        <h6>磁盘使用率</h6>
+                        <div class="progress mb-2">
+                            <div id="diskProgress" class="progress-bar bg-warning" style="width: 0%"></div>
+                        </div>
+                        <small id="diskText">0%</small>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <h5 class="mb-3">实时系统监控</h5>
+                <canvas id="systemMonitorChart" height="100"></canvas>
+            </div>
+        </div>
+        
+        <!-- System Logs Section -->
+        <div id="logs" class="content-section" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-file-alt"></i> 系统日志</h2>
+                <div>
+                    <button class="btn btn-outline-danger btn-sm" onclick="clearLogs()">
+                        <i class="fas fa-trash"></i> 清空日志
+                    </button>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <div id="systemLogs">
+                    <!-- Logs will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Other sections (tasks, batch, users, templates) would be added here -->
+        <div id="tasks" class="content-section" style="display: none;">
+            <h2><i class="fas fa-tasks"></i> 任务管理</h2>
+            <p>任务管理功能正在开发中...</p>
+        </div>
+        
+        <div id="batch" class="content-section" style="display: none;">
+            <h2><i class="fas fa-layer-group"></i> 批处理管理</h2>
+            <p>批处理管理功能正在开发中...</p>
+        </div>
+        
+        <div id="users" class="content-section" style="display: none;">
+            <h2><i class="fas fa-users"></i> 用户管理</h2>
+            <p>用户管理功能正在开发中...</p>
+        </div>
+        
+        <div id="templates" class="content-section" style="display: none;">
+            <h2><i class="fas fa-th-large"></i> 模板管理</h2>
+            <p>模板管理功能正在开发中...</p>
+        </div>
+    </div>
+    
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Admin Dashboard JavaScript -->
+    <script src="/static/js/admin.js"></script>
+</body>
+</html>

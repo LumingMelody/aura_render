@@ -1,0 +1,491 @@
+"""
+VGP新工作流API - 专用于 vgp_new_pipeline
+提供 /vgp/generate 接口
+完全复用 /generate 的处理逻辑，只使用不同的节点序列
+"""
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from pydantic import BaseModel, Field, field_validator
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+import uuid
+
+# 导入数据库相关
+from sqlalchemy.orm import Session
+from database import get_db, TaskService, TaskStatus
+
+# 创建路由
+vgp_router = APIRouter(prefix="/vgp", tags=["VGP Workflow"])
+
+
+class ReferenceMedia(BaseModel):
+    """参考媒体"""
+    product_images: Optional[List[Dict[str, Any]]] = None
+    videos: Optional[List[Dict[str, Any]]] = None
+
+
+class VGPGenerateRequest(BaseModel):
+    """VGP新工作流生成请求"""
+    # 核心输入
+    theme_id: str = Field(..., description="主题ID，如：产品展示、教学视频等")
+    user_description_id: str = Field(..., description="用户的详细描述")
+    target_duration_id: int = Field(default=30, description="目标时长（秒）", ge=5, le=300)
+    keywords_id: List[str] = Field(default_factory=list, description="关键词列表")
+
+    # 参考媒体
+    reference_media: Optional[ReferenceMedia] = None
+
+    # 工作流模板（默认使用新工作流）
+    template: str = Field(default="vgp_new_pipeline", description="工作流模板名称")
+
+    # 工作流参数
+    max_parallel_nodes: int = Field(default=5, ge=1, le=10, description="最大并行节点数")
+    total_timeout: float = Field(default=3600.0, ge=60, le=7200, description="总超时时间（秒）")
+    auto_retry: bool = Field(default=True, description="失败时自动重试")
+    enable_monitoring: bool = Field(default=True, description="启用监控")
+
+    # 会话信息
+    session_id: Optional[str] = None
+    user_id: Optional[str] = None
+
+    @field_validator('template')
+    @classmethod
+    def validate_template(cls, v):
+        allowed = ['vgp_new_pipeline', 'vgp_full_pipeline', 'basic_video_generation']
+        if v not in allowed:
+            raise ValueError(f'模板必须是以下之一: {", ".join(allowed)}')
+        return v
+
+
+class VGPGenerateResponse(BaseModel):
+    """VGP生成响应"""
+    success: bool
+    instance_id: str
+    task_id: Optional[str] = None
+    message: str
+    status: str = "submitted"
+    estimated_time: Optional[float] = None
+
+
+class VGPStatusResponse(BaseModel):
+    """VGP任务状态响应"""
+    instance_id: str
+    status: str
+    progress: Optional[float] = None
+    current_node: Optional[str] = None
+    execution_time: Optional[float] = None
+    result: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+
+
+# ============== 后台处理函数（使用DAG并行执行引擎）==============
+async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateRequest'):
+    """
+    VGP视频生成后台处理 - 使用DAG并行执行引擎
+    支持节点依赖关系和并行执行
+    """
+    from database.base import SessionLocal
+    from pathlib import Path
+    from vgp_dag_executor import VGPDAGExecutor
+
+    # 导入 app.py 中的函数和管理器
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+    # 从 app 模块导入需要的函数
+    from app import (
+        node_manager, send_callback, generate_vgp_summary, serialize_results,
+        extract_node_outputs, generate_keyframes_from_shot_blocks, process_frame_reuse_logic
+    )
+
+    db = SessionLocal()
+    try:
+        # 更新任务状态为处理中
+        TaskService.update_task_status(
+            db, task_id, TaskStatus.PROCESSING,
+            progress=0.0, message="开始VGP视频生成任务"
+        )
+
+        print(f"🚀 [VGP] Starting background processing for task {task_id}")
+
+        # 构建上下文（与老接口一致）
+        context = {
+            "theme_id": request.theme_id,
+            "keywords_id": request.keywords_id,
+            "target_duration_id": request.target_duration_id,
+            "user_description_id": request.user_description_id,
+            "reference_media": request.reference_media.dict() if request.reference_media else {}
+        }
+
+        print(f"🎯 [VGP] Processing request: {request.theme_id} - {request.target_duration_id}s")
+
+        # 创建VGP文档
+        vgp_document = node_manager.vgp_protocol.create_document({
+            'task_id': task_id,
+            'theme': request.theme_id,
+            'keywords': request.keywords_id,
+            'duration': request.target_duration_id,
+            'description': request.user_description_id
+        })
+        vgp_document.task_id = task_id
+
+        # ✨ 使用DAG执行引擎（支持并行和依赖关系）
+        dag_executor = VGPDAGExecutor()
+
+        # 打印DAG结构
+        print("\n" + dag_executor.visualize_dag())
+        print("")
+
+        results = {}
+        completed_count = 0
+
+        # 定义节点执行器函数
+        async def execute_single_node(node_name: str, exec_context: dict) -> dict:
+            """执行单个节点并返回结果"""
+            nonlocal completed_count
+
+            try:
+                # 执行节点
+                node_result = await node_manager.execute_node(node_name, exec_context)
+
+                # 提取输出
+                if node_name in node_result:
+                    node_output = node_result[node_name]
+                    if isinstance(node_output, dict):
+                        extracted_outputs = extract_node_outputs(node_name, node_output)
+                        node_result.update(extracted_outputs)
+                        print(f"🔍 [VGP] Node {node_name} outputs: {list(extracted_outputs.keys())}")
+
+                # 记录到VGP文档
+                node_manager.vgp_protocol.add_node(
+                    vgp_document,
+                    node_type=node_name,
+                    input_data=exec_context.copy(),
+                    output_data=node_result.get(node_name, {})
+                )
+
+                return node_result
+
+            except Exception as e:
+                print(f"❌ [VGP] Node {node_name} execution failed: {e}")
+                raise
+
+        # 定义进度回调
+        async def on_node_progress(node_id: int, status: str, message: str):
+            """节点进度回调"""
+            nonlocal completed_count
+
+            if status == 'completed':
+                completed_count += 1
+
+            progress = (completed_count / 16) * 100
+            status_msg = f"DAG进度: {completed_count}/16 节点 - {message}"
+
+            TaskService.update_task_status(
+                db, task_id, TaskStatus.PROCESSING,
+                progress=progress, message=status_msg
+            )
+
+            await send_callback(task_id, node_id, status, message)
+
+        # 执行DAG工作流
+        print("🚀 [VGP] Starting DAG execution with parallel nodes...")
+        node_results = await dag_executor.execute_dag(
+            node_executor=execute_single_node,
+            context=context,
+            on_progress=on_node_progress
+        )
+
+        # 合并所有节点结果
+        for node_id, node_result in node_results.items():
+            if isinstance(node_result, dict):
+                results.update(node_result)
+
+        print(f"📊 [VGP] DAG execution summary:")
+        summary = dag_executor.get_execution_summary()
+        for key, value in summary.items():
+            print(f"   {key}: {value}")
+
+        # 生成VGP摘要
+        vgp_summary = generate_vgp_summary(results)
+        print(f"📋 [VGP] Analysis summary: {vgp_summary}")
+
+        # ✨ 视频生成现在在 Node 5 (asset_request) 中完成
+        # Node 5 会生成 video_clips 并传递给后续节点
+        # Node 16 (timeline_integration) 会进行最终合成
+        print("📊 [VGP] Video generation completed in Node 5, final composition in Node 16")
+
+        # 从 Node 5 的输出中获取视频生成结果
+        asset_request_result = results.get('asset_request', {})
+        video_clips = asset_request_result.get('video_clips', [])
+        video_generation_success = asset_request_result.get('video_generation_success', False)
+
+        print(f"🎥 [VGP] Node 5 generated {len(video_clips)} video clips")
+        print(f"✅ [VGP] Video generation status: {'Success' if video_generation_success else 'Failed'}")
+
+        # 从 Node 16 的输出中获取最终合成结果
+        timeline_result = results.get('timeline_integration', {})
+        final_video_url = timeline_result.get('final_video_url')
+        final_video_path = timeline_result.get('final_video_path')
+
+        if final_video_url or final_video_path:
+            results['video_generation'] = {
+                "success": True,
+                "video_url": final_video_url,
+                "video_path": final_video_path,
+                "duration_seconds": int(request.target_duration_id),
+                "generation_mode": "vgp_new_pipeline",
+                "segments_count": len(video_clips),
+            }
+            print(f"🎉 [VGP] Final video composition completed")
+        else:
+            results['video_generation_error'] = "No final video generated in Node 16"
+
+        # 保存VGP文档
+        vgp_dir = Path(__file__).parent / "vgp_documents"
+        vgp_dir.mkdir(exist_ok=True)
+        vgp_file_path = str(vgp_dir / f"{task_id}.vgp.json")
+
+        vgp_document.final_output = results.get('video_generation', {})
+
+        try:
+            node_manager.vgp_protocol.save(vgp_document, vgp_file_path)
+            print(f"📄 [VGP] Document saved: {vgp_file_path}")
+        except Exception as e:
+            print(f"⚠️ [VGP] Failed to save document: {e}")
+
+        # 序列化结果
+        serialized_results = serialize_results(results)
+        serialized_results['vgp_document_path'] = vgp_file_path
+
+        # 任务完成
+        TaskService.update_task_status(
+            db, task_id, TaskStatus.COMPLETED,
+            progress=100.0,
+            message="VGP视频生成完成",
+            result=serialized_results
+        )
+
+        await send_callback(task_id, 0, "completed", "VGP视频生成任务完成")
+        print(f"🎉 [VGP] Task {task_id} completed successfully!")
+
+    except Exception as e:
+        error_msg = f"VGP任务执行失败: {str(e)}"
+        TaskService.update_task_status(
+            db, task_id, TaskStatus.FAILED,
+            error_message=error_msg
+        )
+        await send_callback(task_id, 0, "failed", error_msg)
+        print(f"❌ [VGP] Task {task_id} failed: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+@vgp_router.post("/generate", response_model=VGPGenerateResponse)
+async def generate_video(
+    request: VGPGenerateRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    VGP新工作流视频生成 - 完全复用 /generate 的逻辑
+
+    与 /generate 的唯一区别：执行不同的节点序列（VGP新工作流16节点）
+    处理流程完全相同：创建任务 → 立即返回 → 后台执行
+    """
+    try:
+        # 步骤1: 创建数据库任务（与 /generate 完全相同）
+        task = TaskService.create_task(
+            db=db,
+            theme=request.theme_id,
+            keywords=request.keywords_id,
+            target_duration=request.target_duration_id,
+            user_description=request.user_description_id
+        )
+
+        print(f"🚀 [VGP] Starting video generation task: {task.task_id}")
+
+        # 步骤2: 添加后台任务处理（与 /generate 完全相同）
+        background_tasks.add_task(
+            process_vgp_video_generation,
+            task_id=task.task_id,
+            request=request
+        )
+
+        # 步骤3: 立即返回响应（与 /generate 完全相同的模式）
+        return VGPGenerateResponse(
+            success=True,
+            instance_id=task.task_id,
+            task_id=task.task_id,
+            message=f"VGP视频生成任务已启动（模板: {request.template}）",
+            status="started",
+            estimated_time=request.target_duration_id * 2
+        )
+
+    except Exception as e:
+        print(f"❌ [VGP] Failed to create task: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create VGP task: {str(e)}")
+
+
+@vgp_router.get("/status/{instance_id}", response_model=VGPStatusResponse)
+async def get_status(instance_id: str, db: Session = Depends(get_db)):
+    """获取VGP视频生成任务状态 - 从数据库查询（与 /task/{task_id}/status 逻辑相同）"""
+    try:
+        task = TaskService.get_task_by_id(db, instance_id)
+
+        if not task:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+        # 计算执行时间
+        execution_time = None
+        if task.started_at and task.completed_at:
+            execution_time = (task.completed_at - task.started_at).total_seconds()
+
+        return VGPStatusResponse(
+            instance_id=instance_id,
+            status=task.status.value,
+            progress=task.progress,
+            current_node=task.message,  # 当前节点信息存在message中
+            execution_time=execution_time or task.processing_time,
+            result=task.result,
+            error_message=task.error_message
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"查询状态失败: {str(e)}"
+        )
+
+
+@vgp_router.post("/cancel/{instance_id}")
+async def cancel_task(instance_id: str, db: Session = Depends(get_db)):
+    """取消视频生成任务 - 从数据库更新状态"""
+    try:
+        task = TaskService.get_task_by_id(db, instance_id)
+
+        if not task:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+        # 只能取消进行中的任务
+        if task.status == TaskStatus.PROCESSING:
+            TaskService.update_task_status(
+                db, instance_id, TaskStatus.FAILED,
+                error_message="用户取消任务"
+            )
+            return {"success": True, "message": "任务已取消"}
+        else:
+            return {
+                "success": False,
+                "message": f"任务状态为{task.status.value}，无法取消"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"取消任务失败: {str(e)}"
+        )
+
+
+@vgp_router.get("/templates")
+async def get_available_templates():
+    """获取可用的工作流模板 - 返回静态配置"""
+    return {
+        "templates": [
+            "vgp_new_pipeline",
+            "vgp_full_pipeline",
+            "basic_video_generation"
+        ],
+        "recommended": "vgp_new_pipeline",
+        "description": {
+            "vgp_new_pipeline": "新版VGP工作流，优化的16节点架构，素材生成集中化",
+            "vgp_full_pipeline": "旧版VGP工作流，保留用于兼容（暂不可用）",
+            "basic_video_generation": "基础视频生成（使用/generate接口）"
+        }
+    }
+
+
+@vgp_router.get("/active-tasks")
+async def get_active_tasks(db: Session = Depends(get_db)):
+    """获取所有活跃任务 - 从数据库查询"""
+    try:
+        # 查询所有进行中的任务
+        from database.models import Task
+        active_tasks = db.query(Task).filter(
+            Task.status == TaskStatus.PROCESSING
+        ).all()
+
+        tasks_info = [
+            {
+                "task_id": task.task_id,
+                "theme": task.theme,
+                "status": task.status.value,
+                "progress": task.progress,
+                "current_node": task.message,
+                "started_at": task.started_at.isoformat() if task.started_at else None
+            }
+            for task in active_tasks
+        ]
+
+        return {
+            "total": len(tasks_info),
+            "tasks": tasks_info
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"查询活跃任务失败: {str(e)}"
+        )
+
+
+@vgp_router.get("/system/health")
+async def health_check(db: Session = Depends(get_db)):
+    """健康检查 - 检查数据库和节点管理器"""
+    try:
+        # 检查数据库连接
+        from database.models import Task
+        db.query(Task).first()
+
+        # 检查节点管理器
+        from app import node_manager
+
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "system_info": {
+                "database": "connected",
+                "node_manager": "available" if node_manager else "unavailable",
+                "vgp_nodes_count": 16,
+                "api_version": "1.0.0"
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+# 如果直接运行此文件，启动FastAPI服务器
+if __name__ == "__main__":
+    import uvicorn
+    from fastapi import FastAPI
+
+    app = FastAPI(title="VGP新工作流API", version="1.0.0")
+    app.include_router(vgp_router)
+
+    print("="*60)
+    print("🎬 VGP新工作流API服务")
+    print("="*60)
+    print("接口地址: http://localhost:8000")
+    print("文档地址: http://localhost:8000/docs")
+    print("="*60)
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

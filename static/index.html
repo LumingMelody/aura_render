@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aura Render - AI 视频生成平台</title>
+    
+    <!-- CSS Dependencies -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/animate.css@4.1.1/animate.min.css" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-video me-2"></i>
+                Aura Render
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#generator">视频生成器</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#gallery">作品库</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#tasks">任务管理</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#settings">设置</a>
+                    </li>
+                </ul>
+                <div class="navbar-nav">
+                    <span class="navbar-text me-3">
+                        <i class="fas fa-circle text-success"></i>
+                        <span id="status-indicator">系统正常</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container-fluid mt-5 pt-3">
+        <!-- Hero Section -->
+        <section id="hero" class="row align-items-center py-5 bg-gradient-primary text-white rounded-4 mb-5">
+            <div class="col-lg-6">
+                <h1 class="display-4 fw-bold mb-4 animate__animated animate__fadeInUp">
+                    AI 驱动的视频生成平台
+                </h1>
+                <p class="lead mb-4 animate__animated animate__fadeInUp animate__delay-1s">
+                    使用先进的人工智能技术，从文本描述生成专业级视频内容。
+                    支持多种风格、高清输出和实时预览。
+                </p>
+                <button class="btn btn-light btn-lg me-3 animate__animated animate__fadeInUp animate__delay-2s" onclick="scrollToSection('generator')">
+                    <i class="fas fa-play me-2"></i>开始创作
+                </button>
+                <button class="btn btn-outline-light btn-lg animate__animated animate__fadeInUp animate__delay-2s" onclick="showDemo()">
+                    <i class="fas fa-eye me-2"></i>观看演示
+                </button>
+            </div>
+            <div class="col-lg-6 text-center">
+                <div class="position-relative animate__animated animate__fadeInRight animate__delay-1s">
+                    <div class="hero-video-placeholder">
+                        <i class="fas fa-play-circle fa-10x text-white-50"></i>
+                        <div class="mt-3">
+                            <small class="text-white-75">视频预览区域</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Video Generator Section -->
+        <section id="generator" class="mb-5">
+            <div class="row">
+                <div class="col-lg-8">
+                    <div class="card shadow-lg border-0">
+                        <div class="card-header bg-white border-0 py-3">
+                            <h3 class="mb-0">
+                                <i class="fas fa-magic text-primary me-2"></i>
+                                AI 视频生成器
+                            </h3>
+                        </div>
+                        <div class="card-body p-4">
+                            <form id="videoGeneratorForm">
+                                <!-- Theme Selection -->
+                                <div class="mb-4">
+                                    <label class="form-label fw-semibold">视频主题</label>
+                                    <select class="form-select form-select-lg" id="theme" name="theme_id" required>
+                                        <option value="">选择视频主题...</option>
+                                        <option value="产品宣传">产品宣传</option>
+                                        <option value="科技介绍">科技介绍</option>
+                                        <option value="企业展示">企业展示</option>
+                                        <option value="教育培训">教育培训</option>
+                                        <option value="营销推广">营销推广</option>
+                                        <option value="品牌故事">品牌故事</option>
+                                        <option value="活动宣传">活动宣传</option>
+                                        <option value="新闻资讯">新闻资讯</option>
+                                    </select>
+                                </div>
+
+                                <!-- Keywords -->
+                                <div class="mb-4">
+                                    <label class="form-label fw-semibold">关键词标签</label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control form-control-lg" id="keywordInput" 
+                                               placeholder="输入关键词，回车添加">
+                                        <button class="btn btn-outline-primary" type="button" onclick="addKeyword()">
+                                            <i class="fas fa-plus"></i>
+                                        </button>
+                                    </div>
+                                    <div class="mt-2" id="keywordTags">
+                                        <!-- Keywords will be added here dynamically -->
+                                    </div>
+                                    <input type="hidden" id="keywords" name="keywords_id" required>
+                                </div>
+
+                                <!-- Duration -->
+                                <div class="mb-4">
+                                    <label class="form-label fw-semibold">视频时长</label>
+                                    <div class="row">
+                                        <div class="col-md-8">
+                                            <input type="range" class="form-range" id="duration" name="target_duration_id" 
+                                                   min="15" max="300" value="60" oninput="updateDurationDisplay()">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <input type="number" class="form-control" id="durationInput" 
+                                                   min="15" max="300" value="60" onchange="updateDurationSlider()">
+                                        </div>
+                                    </div>
+                                    <small class="text-muted">推荐时长：15-120秒</small>
+                                </div>
+
+                                <!-- Description -->
+                                <div class="mb-4">
+                                    <label class="form-label fw-semibold">详细描述</label>
+                                    <textarea class="form-control" id="description" name="user_description_id" 
+                                              rows="4" placeholder="详细描述您想要的视频内容、风格、场景等..." required></textarea>
+                                    <div class="form-text">
+                                        <span id="charCount">0</span>/1000 字符
+                                    </div>
+                                </div>
+
+                                <!-- Advanced Options Toggle -->
+                                <div class="mb-3">
+                                    <button type="button" class="btn btn-link p-0 text-decoration-none" 
+                                            data-bs-toggle="collapse" data-bs-target="#advancedOptions">
+                                        <i class="fas fa-cog me-1"></i>高级选项
+                                        <i class="fas fa-chevron-down ms-1"></i>
+                                    </button>
+                                </div>
+
+                                <!-- Advanced Options -->
+                                <div class="collapse" id="advancedOptions">
+                                    <div class="card bg-light border-0 p-3 mb-4">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <label class="form-label">优先级</label>
+                                                <select class="form-select" id="priority" name="priority">
+                                                    <option value="normal">普通</option>
+                                                    <option value="high">高</option>
+                                                    <option value="urgent">紧急</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">视频质量</label>
+                                                <select class="form-select" id="quality" name="quality">
+                                                    <option value="standard">标准</option>
+                                                    <option value="high" selected>高清</option>
+                                                    <option value="ultra">超高清</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="row mt-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label">输出格式</label>
+                                                <select class="form-select" id="format" name="format">
+                                                    <option value="mp4" selected>MP4</option>
+                                                    <option value="mov">MOV</option>
+                                                    <option value="webm">WebM</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">分辨率</label>
+                                                <select class="form-select" id="resolution" name="resolution">
+                                                    <option value="1280x720">HD (720p)</option>
+                                                    <option value="1920x1080" selected>Full HD (1080p)</option>
+                                                    <option value="2560x1440">2K (1440p)</option>
+                                                    <option value="3840x2160">4K (2160p)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Generate Button -->
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-primary btn-lg" id="generateBtn">
+                                        <i class="fas fa-wand-magic-sparkles me-2"></i>
+                                        生成视频
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sidebar -->
+                <div class="col-lg-4">
+                    <!-- Quick Templates -->
+                    <div class="card shadow border-0 mb-4">
+                        <div class="card-header bg-white border-0">
+                            <h5 class="mb-0">
+                                <i class="fas fa-templates text-primary me-2"></i>
+                                快速模板
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="template-grid">
+                                <div class="template-card" onclick="useTemplate('product')">
+                                    <i class="fas fa-box"></i>
+                                    <span>产品展示</span>
+                                </div>
+                                <div class="template-card" onclick="useTemplate('tech')">
+                                    <i class="fas fa-microchip"></i>
+                                    <span>科技介绍</span>
+                                </div>
+                                <div class="template-card" onclick="useTemplate('company')">
+                                    <i class="fas fa-building"></i>
+                                    <span>企业宣传</span>
+                                </div>
+                                <div class="template-card" onclick="useTemplate('education')">
+                                    <i class="fas fa-graduation-cap"></i>
+                                    <span>教育培训</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Generation Tips -->
+                    <div class="card shadow border-0">
+                        <div class="card-header bg-white border-0">
+                            <h5 class="mb-0">
+                                <i class="fas fa-lightbulb text-warning me-2"></i>
+                                生成技巧
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-unstyled">
+                                <li class="mb-2">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    使用具体、生动的描述词汇
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    明确指定场景和风格要求
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    合理设置视频时长（60-90秒最佳）
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    选择相关的关键词标签
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Task Progress Section -->
+        <section id="progress" class="mb-5" style="display: none;">
+            <div class="card shadow border-0">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-cogs me-2"></i>
+                        视频生成进度
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-lg-8">
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>当前阶段：<span id="currentStage">初始化</span></span>
+                                    <span><span id="progressPercent">0</span>%</span>
+                                </div>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                         id="progressBar" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <small class="text-muted" id="progressMessage">等待开始...</small>
+                            </div>
+                            <div class="row text-center">
+                                <div class="col-3">
+                                    <div class="step-indicator" id="step1">
+                                        <i class="fas fa-brain"></i>
+                                        <small>内容分析</small>
+                                    </div>
+                                </div>
+                                <div class="col-3">
+                                    <div class="step-indicator" id="step2">
+                                        <i class="fas fa-search"></i>
+                                        <small>素材匹配</small>
+                                    </div>
+                                </div>
+                                <div class="col-3">
+                                    <div class="step-indicator" id="step3">
+                                        <i class="fas fa-volume-up"></i>
+                                        <small>音频生成</small>
+                                    </div>
+                                </div>
+                                <div class="col-3">
+                                    <div class="step-indicator" id="step4">
+                                        <i class="fas fa-film"></i>
+                                        <small>视频合成</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="bg-light rounded p-3">
+                                <h6>任务信息</h6>
+                                <div class="mb-2">
+                                    <small class="text-muted">任务ID：</small>
+                                    <span id="taskId">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">开始时间：</small>
+                                    <span id="startTime">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">预计完成：</small>
+                                    <span id="estimatedTime">-</span>
+                                </div>
+                                <div class="mt-3">
+                                    <button class="btn btn-outline-danger btn-sm" onclick="cancelTask()">
+                                        <i class="fas fa-times me-1"></i>取消任务
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section id="results" class="mb-5" style="display: none;">
+            <div class="card shadow border-0">
+                <div class="card-header bg-success text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-check-circle me-2"></i>
+                        生成完成
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-lg-8">
+                            <div class="video-player-container mb-3">
+                                <video id="resultVideo" class="w-100 rounded" controls style="max-height: 400px;">
+                                    您的浏览器不支持视频播放。
+                                </video>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="bg-light rounded p-3">
+                                <h6>视频信息</h6>
+                                <div class="mb-2">
+                                    <small class="text-muted">文件大小：</small>
+                                    <span id="fileSize">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">分辨率：</small>
+                                    <span id="videoResolution">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">时长：</small>
+                                    <span id="videoDuration">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">生成时间：</small>
+                                    <span id="generationTime">-</span>
+                                </div>
+                                <div class="mt-3 d-grid gap-2">
+                                    <button class="btn btn-primary" onclick="downloadVideo()">
+                                        <i class="fas fa-download me-1"></i>下载视频
+                                    </button>
+                                    <button class="btn btn-outline-primary" onclick="shareVideo()">
+                                        <i class="fas fa-share me-1"></i>分享视频
+                                    </button>
+                                    <button class="btn btn-outline-secondary" onclick="generateNew()">
+                                        <i class="fas fa-plus me-1"></i>生成新视频
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Gallery Section -->
+        <section id="gallery" class="mb-5" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3>
+                    <i class="fas fa-images text-primary me-2"></i>
+                    作品库
+                </h3>
+                <button class="btn btn-outline-primary" onclick="refreshGallery()">
+                    <i class="fas fa-sync-alt me-1"></i>刷新
+                </button>
+            </div>
+            <div class="row" id="galleryGrid">
+                <!-- Gallery items will be loaded here -->
+            </div>
+        </section>
+
+        <!-- Tasks Section -->
+        <section id="tasks" class="mb-5" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3>
+                    <i class="fas fa-tasks text-primary me-2"></i>
+                    任务管理
+                </h3>
+                <button class="btn btn-outline-primary" onclick="refreshTasks()">
+                    <i class="fas fa-sync-alt me-1"></i>刷新
+                </button>
+            </div>
+            <div class="card shadow border-0">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>任务ID</th>
+                                    <th>主题</th>
+                                    <th>状态</th>
+                                    <th>进度</th>
+                                    <th>创建时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tasksTableBody">
+                                <!-- Tasks will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="liveToast" class="toast" role="alert">
+            <div class="toast-header">
+                <i class="fas fa-info-circle text-primary me-2"></i>
+                <strong class="me-auto">Aura Render</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body" id="toastMessage">
+                <!-- Toast message will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="spinner-container">
+            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <div class="mt-3 text-primary fw-semibold">处理中...</div>
+        </div>
+    </div>
+
+    <!-- JavaScript Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.4.0/dist/axios.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="js/app.js"></script>
+</body>
+</html>

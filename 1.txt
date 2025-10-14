@@ -1,0 +1,66 @@
+1、分镜图序列是按照具体的分镜描述需求，先将传入的分镜段进行合并成一个整体来考虑，然后再对这个长视频段进行生成性划分，变成五秒五秒的短段落的细化分镜，这个步骤是用以确定先整体确定一个基调，根据总基调为每个短段落生成一个首帧分镜的细化描述，然后根据短段落与长段落的要求，例如两个短段落是否是连续发生的或者是允许发生镜头切换的来确定是否下一帧的首帧要作为上一帧的尾帧，然后生成过程细化的提示词，最后根据连续性是否要首尾帧生成还是仅首帧生成分别使用首尾帧生成（两种视频生成方式）
+
+2、如果分镜转场很大，涉及到镜头切换，建议在短段落划分处就解决，如果还是存在，那就根据最后镜头变换的结果和下一段落是否相关来确定。
+
+3、VGP节点如何确保生成的分镜图适合，参照md，会先规定产品的宣传偏好和时代偏好，避免画面中出现雷点，然后整体的分镜元素设计会按照ai的能力限制进行优化（ai比较擅长大场景，会更突出大场景的比例），然后根据分镜整体设计一个基调，再将分镜进行细化，同时最重要的，判断分镜里是否有产品或者其他强约束，要优先保证产品的一致性，这个是使用者最关心的，他绝对不允许自己的产品变成别人的产品，最后对于分镜，用户提供一系列分镜描述，你需要判断这些分镜中的场景、物体或人物是否属于同一场景、同一物体或同一人物。若属于同一元素，则将其归为一类，并说明是否需要基于前一张分镜进行图生图（即根据前一张图像生成后续图像，以保持视觉一致性）。
+优先性是判断是否为同一物体，若是同一物体则可直接使用图生图，若不是而画面中有产品则使用原产品图进行图生图
+
+分析用户提供的分镜，识别其中描述的场景、物体或人物。
+
+以场景为核心进行分类：若多个分镜共享同一场景、同一物体或同一人物，且视觉上需要保持一致，则归为同一类。
+
+对每一类分镜，判断是否需要基于前一张分镜进行图生图：
+
+如果分镜间场景高度相似（例如相同背景、相同物体或人物，仅视角、动作或细节略有变化），则需要图生图。
+
+如果分镜间场景完全不同（例如切换了背景、物体或人物），则不需要图生图。
+
+输出时，对每一类分镜明确说明是否需要图生图，并解释原因（例如：“需要图生图，因场景与人物相同，仅视角变化”）。
+
+使用vl进行检查时也一样，重点从图片含义角度来看是否满足，是否有异常点。
+
+
+✅ Node 16/16 completed: timeline_integration
+📋 VGP分析摘要: {'video_type': '未知', 'emotions': {}, 'shot_count': 0, 'asset_count': 0, 'subtitle_count': 0}
+2025-09-30 16:59:15,316 INFO sqlalchemy.engine.Engine SELECT tasks.id AS tasks_id, tasks.task_id AS tasks_task_id, tasks.theme AS tasks_theme, tasks.keywords AS tasks_keywords, tasks.target_duration AS tasks_target_duration, tasks.user_description AS tasks_user_description, tasks.config AS tasks_config, tasks.priority AS tasks_priority, tasks.status AS tasks_status, tasks.progress AS tasks_progress, tasks.message AS tasks_message, tasks.result AS tasks_result, tasks.output_url AS tasks_output_url, tasks.error_message AS tasks_error_message, tasks.retry_count AS tasks_retry_count, tasks.created_at AS tasks_created_at, tasks.started_at AS tasks_started_at, tasks.completed_at AS tasks_completed_at, tasks.processing_time AS tasks_processing_time, tasks.project_id AS tasks_project_id
+FROM tasks
+
+
+
+这边需要修改一下，生成素材这一步应该在node5的aseet_request_node这一步去生成，这一步是对接所有素材的节点，
+然后这一步上请求素材供给系统，为他智能的去匹配素材，然后按照这个节点顺序来进行下一步的处理，包括通过各种素材检测来确定是否添加滤镜，添加其他等，
+// 主干
+"1" -> "2";
+"2" -> "3";
+
+// 分支
+"3" -> "4";
+"4" -> "9";
+
+"3" -> "5";
+"5" -> "6";
+"6" -> "7";
+"7" -> "8";
+"8" -> "16";
+
+"3" -> "10";
+"3" -> "12";
+"3" -> "13";
+"3" -> "14";
+"3" -> "15";
+
+// 汇聚
+"9" ->"11"
+"11" ->"16";
+"10" -> "11";
+
+"12" -> "16";
+"13" -> "16";
+"14" -> "11";
+"15" -> "16";
+其他节点如节点9-BGM合成查找：BGMCompositionNode，分别负责匹配BGM，节点10-音效添加：SFXIntegrationNode，负责匹配音效，
+节点14-视频下方的字幕：SubtitleNode负责添加字幕与tts，节点13-额外插入的说明或装饰文字：AuxTextInsertionNode，节点14-视频下方的字幕：SubtitleNode，节点15-片头片尾生成： IntroOutroNode
+当然在这几步上都是负责确定要不要添加，要添加什么（包括素材生成并列入），但不进行最终的合成，也就是只生成，不合成。
+
+
+

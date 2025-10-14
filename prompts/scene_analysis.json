@@ -1,0 +1,17 @@
+{
+  "id": "scene_analysis",
+  "name": "场景分析",
+  "type": "instruction",
+  "content": "请分析这张图片的场景信息，重点关注视频制作相关要素。\n\n输出JSON格式：\n{{\n  \"scene_type\": \"场景类型（室内/室外/工作室等）\",\n  \"location\": \"具体位置描述\",\n  \"time_of_day\": \"时间（白天/夜晚/黄昏等）\",\n  \"weather\": \"天气情况\",\n  \"camera_angle\": \"机位角度（俯视/平视/仰视等）\",\n  \"depth_of_field\": \"景深效果\",\n  \"visual_elements\": {{\n    \"foreground\": \"前景元素\",\n    \"midground\": \"中景元素\", \n    \"background\": \"背景元素\"\n  }},\n  \"production_notes\": {{\n    \"equipment_suggestions\": [\"建议设备1\", \"建议设备2\"],\n    \"lighting_setup\": \"灯光建议\",\n    \"challenges\": [\"拍摄难点1\", \"拍摄难点2\"]\n  }},\n  \"similar_scenes\": [\"相似场景1\", \"相似场景2\"]\n}}\n\n分析要专业、实用，适合视频制作参考。",
+  "variables": [],
+  "description": "专业场景分析，适用于视频制作",
+  "tags": [
+    "vision",
+    "scene",
+    "production"
+  ],
+  "difficulty": "complex",
+  "examples": [],
+  "created_at": "2025-09-06T17:09:40.761897",
+  "updated_at": "2025-09-06T17:09:40.761897"
+}

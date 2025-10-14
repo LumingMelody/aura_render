@@ -1,0 +1,103 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Testing
+test_*.py
+*_test.py
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+*.md
+docs/
+README.md
+CHANGELOG.md
+LICENSE
+
+# Development files
+.env.example
+.env.local
+docker-compose.dev.yml
+requirements-dev.txt
+requirements-gpu.txt
+
+# Logs and temporary files
+*.log
+logs/
+logs2.txt
+temp/
+tmp/
+*.tmp
+cache/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Database files (local development)
+*.db
+*.sqlite
+*.sqlite3
+
+# Media files (not needed in container)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.mp3
+*.wav
+output/
+uploads/
+
+# Scripts (unless needed for deployment)
+scripts/test_*.py
+scripts/debug_*.py
+
+# Monitoring configs (use environment variables instead)
+prometheus.yml
+grafana/
+
+# Node modules (if any frontend)
+node_modules/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Certificate files (mount as volumes instead)
+ssl/
+*.pem
+*.crt
+*.key

@@ -1,0 +1,18 @@
+{
+  "id": "color_mood_analysis",
+  "name": "色彩情感分析",
+  "type": "instruction",
+  "content": "请分析图片的色彩和情感特征。\n\n输出JSON格式：\n{{\n  \"color_palette\": {{\n    \"dominant_colors\": [\"#颜色值1\", \"#颜色值2\", \"#颜色值3\"],\n    \"accent_colors\": [\"#强调色1\", \"#强调色2\"], \n    \"color_temperature\": \"冷色调/暖色调/中性\",\n    \"saturation_level\": \"高饱和度/中等/低饱和度\",\n    \"brightness\": \"明亮/中等/昏暗\"\n  }},\n  \"emotional_impact\": {{\n    \"primary_emotion\": \"主要情感\",\n    \"secondary_emotions\": [\"次要情感1\", \"次要情感2\"],\n    \"energy_level\": \"高/中/低\",\n    \"formality\": \"正式/非正式/中性\"\n  }},\n  \"style_characteristics\": {{\n    \"visual_style\": \"视觉风格\",\n    \"aesthetic\": \"美学特征\",\n    \"genre\": \"类型/流派\"\n  }},\n  \"usage_recommendations\": {{\n    \"suitable_for\": [\"适用场景1\", \"适用场景2\"],\n    \"target_audience\": \"目标受众\",\n    \"brand_alignment\": \"品牌调性建议\"\n  }}\n}}\n\n分析要深入、专业。",
+  "variables": [],
+  "description": "深度色彩和情感分析",
+  "tags": [
+    "vision",
+    "color",
+    "emotion",
+    "mood"
+  ],
+  "difficulty": "moderate",
+  "examples": [],
+  "created_at": "2025-09-06T17:09:40.761900",
+  "updated_at": "2025-09-06T17:09:40.761900"
+}

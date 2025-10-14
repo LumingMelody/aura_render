@@ -1,0 +1,267 @@
+# Aura Render - Default Configuration
+# 默认配置文件，包含所有模块的基础设置
+
+app:
+  name: "Aura Render"
+  version: "1.0.0"
+  description: "智能视频生成系统"
+  debug: false
+
+# API服务配置
+api:
+  title: "Aura Render API"
+  description: "智能视频生成系统API"
+  version: "1.0.0"
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  reload: false
+  workers: 1
+
+  # CORS设置
+  cors_origins:
+    - "*"
+  cors_methods:
+    - "*"
+  cors_headers:
+    - "*"
+
+  # 文档设置
+  enable_docs: true
+  docs_url: "/docs"
+  redoc_url: "/redoc"
+  openapi_url: "/openapi.json"
+
+  # 安全设置
+  secret_key: "your-secret-key-change-this"
+  access_token_expire_minutes: 60
+  refresh_token_expire_days: 30
+
+  # 请求限制
+  max_request_size: 104857600  # 100MB
+  request_timeout: 300.0  # 5分钟
+
+# 数据库配置
+database:
+  type: "sqlite"
+  host: "localhost"
+  port: null
+  database: "aura_render.db"
+  username: null
+  password: null
+  pool_size: 5
+  max_overflow: 10
+  pool_timeout: 30
+  pool_recycle: 3600
+  ssl_mode: null
+  charset: "utf8mb4"
+
+# 缓存配置
+cache:
+  type: "memory"
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: null
+  max_size: 1000
+  default_timeout: 3600
+  key_prefix: "aura:"
+  serializer: "json"
+
+# 监控配置
+monitoring:
+  enabled: true
+  metrics_enabled: true
+  alerts_enabled: true
+  metrics_interval: 60
+  metrics_retention_days: 30
+  alert_check_interval: 60
+  alert_retention_days: 7
+
+  # 性能阈值
+  cpu_threshold: 80.0
+  memory_threshold: 85.0
+  disk_threshold: 90.0
+  error_rate_threshold: 5.0
+  response_time_threshold: 2000.0
+
+  # 外部监控
+  prometheus_enabled: false
+  prometheus_port: 9090
+  grafana_enabled: false
+  grafana_url: null
+
+# 安全配置
+security:
+  # JWT设置
+  jwt_secret_key: "your-jwt-secret-key"
+  jwt_algorithm: "HS256"
+  jwt_expire_minutes: 60
+
+  # 密码策略
+  password_min_length: 8
+  password_require_numbers: true
+  password_require_symbols: true
+  password_require_uppercase: true
+
+  # 会话设置
+  session_timeout_minutes: 30
+  max_failed_login_attempts: 5
+  account_lockout_minutes: 15
+
+  # HTTPS设置
+  force_https: false
+  ssl_cert_path: null
+  ssl_key_path: null
+
+  # CSRF保护
+  csrf_protection: true
+  csrf_secret_key: "your-csrf-secret-key"
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+  # 文件日志
+  file_enabled: true
+  file_path: "logs/aura_render.log"
+  file_max_size: 10485760  # 10MB
+  file_backup_count: 5
+
+  # 控制台日志
+  console_enabled: true
+  console_colors: true
+
+  # 结构化日志
+  json_format: false
+  include_traceback: true
+
+  # 模块日志级别
+  module_levels: {}
+
+# 视频生成配置
+video_generation:
+  # 默认设置
+  default_resolution: "1080p"
+  default_fps: 30
+  default_duration: 60
+
+  # 限制设置
+  max_duration: 600  # 10分钟
+  max_resolution: "4K"
+  max_file_size: 2147483648  # 2GB
+
+  # 质量设置
+  quality_levels:
+    - "low"
+    - "medium"
+    - "high"
+    - "ultra"
+  default_quality: "high"
+
+  # 并发设置
+  max_concurrent_generations: 5
+  queue_timeout: 3600
+
+  # 模板和存储
+  template_dir: "templates"
+  custom_templates_enabled: true
+  output_dir: "output"
+  temp_dir: "temp"
+  cleanup_temp_files: true
+
+# 素材配置
+materials:
+  # 存储设置
+  upload_dir: "uploads"
+  max_file_size: 104857600  # 100MB
+  allowed_extensions:
+    - ".jpg"
+    - ".jpeg"
+    - ".png"
+    - ".gif"
+    - ".mp4"
+    - ".avi"
+    - ".mov"
+    - ".mp3"
+    - ".wav"
+
+  # 处理设置
+  auto_resize: true
+  max_image_size: [1920, 1080]
+  image_quality: 85
+
+  # 缓存设置
+  cache_processed_materials: true
+  cache_duration_days: 30
+
+  # API设置
+  external_apis_enabled: true
+  api_rate_limits:
+    pexels: 200
+    pixabay: 100
+    freesound: 50
+
+# 任务队列配置
+task_queue:
+  type: "memory"  # memory, redis
+
+  # Redis配置（当type为redis时）
+  redis_host: "localhost"
+  redis_port: 6379
+  redis_db: 1
+  redis_password: null
+
+  # 队列设置
+  default_queue: "default"
+  high_priority_queue: "high"
+  low_priority_queue: "low"
+
+  # 工作进程配置
+  worker_count: 2
+  max_retries: 3
+  retry_delay: 60
+  task_timeout: 3600
+
+# 外部服务API配置
+external_apis:
+  # Pexels API
+  pexels:
+    api_key: null
+    base_url: "https://api.pexels.com/v1"
+    rate_limit: 200
+    timeout: 30
+
+  # Pixabay API
+  pixabay:
+    api_key: null
+    base_url: "https://pixabay.com/api"
+    rate_limit: 100
+    timeout: 30
+
+  # Freesound API
+  freesound:
+    api_key: null
+    base_url: "https://freesound.org/apiv2"
+    rate_limit: 50
+    timeout: 30
+
+  # Azure TTS
+  azure_tts:
+    subscription_key: null
+    region: "eastus"
+    timeout: 60
+
+  # OpenAI API
+  openai:
+    api_key: null
+    base_url: "https://api.openai.com/v1"
+    timeout: 60
+
+  # Stability AI
+  stability_ai:
+    api_key: null
+    base_url: "https://api.stability.ai/v1"
+    timeout: 120

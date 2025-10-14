@@ -1,0 +1,201 @@
+version: '3.8'
+
+services:
+  # Main application service
+  app:
+    build:
+      context: .
+      target: production
+    ports:
+      - "8000:8000"
+    environment:
+      # Database and Cache
+      - DATABASE_URL=sqlite:///./aura_render.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+      # Application
+      - ENV=production
+      - LOG_LEVEL=info
+
+      # Alibaba Cloud APIs (⚠️ Set these in .env file or docker secrets)
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - AI__DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+
+      # Alibaba Cloud OSS
+      - OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID}
+      - OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET}
+      - OSS_BUCKET_NAME=${OSS_BUCKET_NAME:-ai-movie-cloud-v2}
+      - OSS_ENDPOINT=${OSS_ENDPOINT:-oss-cn-shanghai.aliyuncs.com}
+    volumes:
+      - app_temp:/app/temp
+      - app_output:/app/output
+      - app_logs:/app/logs
+      - app_uploads:/app/uploads
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Redis service for caching and message broker
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery worker for background tasks
+  worker:
+    build:
+      context: .
+      target: worker
+    environment:
+      # Database and Cache
+      - DATABASE_URL=sqlite:///./aura_render.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+      # Application
+      - ENV=production
+      - LOG_LEVEL=info
+
+      # Alibaba Cloud APIs
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - AI__DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID}
+      - OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET}
+      - OSS_BUCKET_NAME=${OSS_BUCKET_NAME:-ai-movie-cloud-v2}
+      - OSS_ENDPOINT=${OSS_ENDPOINT:-oss-cn-shanghai.aliyuncs.com}
+    volumes:
+      - app_temp:/app/temp
+      - app_output:/app/output
+      - app_logs:/app/logs
+    depends_on:
+      - redis
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Celery beat for scheduled tasks
+  scheduler:
+    build:
+      context: .
+      target: scheduler
+    environment:
+      - DATABASE_URL=sqlite:///./aura_render.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ENV=production
+      - LOG_LEVEL=info
+    volumes:
+      - app_temp:/app/temp
+      - app_logs:/app/logs
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # Flower for Celery monitoring
+  flower:
+    build:
+      context: .
+      target: base
+    command: celery -A task_queue.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - app_output:/var/www/output:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  # PostgreSQL for production (alternative to SQLite)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=aura_render
+      - POSTGRES_USER=aura_user
+      - POSTGRES_PASSWORD=aura_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aura_user -d aura_render"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    restart: unless-stopped
+
+volumes:
+  app_temp:
+  app_output:
+  app_logs:
+  app_uploads:
+  redis_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    driver: bridge

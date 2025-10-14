@@ -1,0 +1,179 @@
+# Aura Render - Testing Environment Configuration
+# 测试环境配置，用于自动化测试和CI/CD
+
+app:
+  debug: true
+  name: "Aura Render Test"
+
+# API服务配置
+api:
+  host: "127.0.0.1"
+  port: 8001  # 避免与开发环境冲突
+  debug: true
+  reload: false
+  workers: 1
+  enable_docs: true
+
+  # 测试环境允许所有跨域
+  cors_origins:
+    - "*"
+
+  # 安全配置
+  secret_key: "test-secret-key-not-for-production"
+  access_token_expire_minutes: 60
+
+# 数据库配置 - 使用内存SQLite
+database:
+  type: "sqlite"
+  database: ":memory:"  # 内存数据库，测试结束自动清理
+
+# 缓存配置 - 使用内存缓存
+cache:
+  type: "memory"
+  max_size: 100
+  default_timeout: 300
+
+# 监控配置 - 测试环境简化监控
+monitoring:
+  enabled: false
+  metrics_enabled: false
+  alerts_enabled: false
+
+# 安全配置 - 测试环境宽松策略
+security:
+  jwt_secret_key: "test-jwt-secret"
+  jwt_expire_minutes: 60
+  password_min_length: 4
+  password_require_numbers: false
+  password_require_symbols: false
+  password_require_uppercase: false
+  session_timeout_minutes: 60
+  max_failed_login_attempts: 100
+  force_https: false
+  csrf_protection: false
+
+# 日志配置 - 测试环境详细日志
+logging:
+  level: "DEBUG"
+  console_enabled: true
+  console_colors: false  # CI环境不支持颜色
+  file_enabled: false
+  json_format: false
+  include_traceback: true
+
+# 视频生成配置 - 测试环境快速配置
+video_generation:
+  default_resolution: "480p"
+  default_duration: 10
+  max_duration: 30
+  max_resolution: "720p"
+  max_file_size: 10485760  # 10MB
+  default_quality: "low"
+  max_concurrent_generations: 1
+  queue_timeout: 300  # 5分钟
+  cleanup_temp_files: true
+
+# 素材配置
+materials:
+  upload_dir: "test_uploads"
+  max_file_size: 1048576  # 1MB
+  cache_duration_days: 1
+  external_apis_enabled: false  # 测试环境禁用外部API
+
+# 任务队列配置
+task_queue:
+  type: "memory"
+  worker_count: 1
+  max_retries: 1
+  retry_delay: 5
+  task_timeout: 300
+
+# 外部API配置 - 测试环境使用Mock
+external_apis:
+  pexels:
+    api_key: "test-key"
+    rate_limit: 10
+    timeout: 5
+
+  pixabay:
+    api_key: "test-key"
+    rate_limit: 10
+    timeout: 5
+
+  freesound:
+    api_key: "test-key"
+    rate_limit: 10
+    timeout: 5
+
+  azure_tts:
+    subscription_key: "test-key"
+    region: "test-region"
+    timeout: 10
+
+  openai:
+    api_key: "test-key"
+    timeout: 10
+
+  stability_ai:
+    api_key: "test-key"
+    timeout: 10
+
+# 测试专用配置
+test:
+  # Mock配置
+  use_mock_apis: true
+  mock_delays: false
+  mock_failures: false
+
+  # 测试数据配置
+  create_test_data: true
+  test_user_count: 5
+  test_material_count: 20
+  test_template_count: 3
+
+  # 清理配置
+  cleanup_after_test: true
+  preserve_test_files: false
+
+  # 并发测试配置
+  max_concurrent_tests: 4
+  test_timeout: 60
+
+  # 覆盖率配置
+  enable_coverage: true
+  coverage_threshold: 80
+  coverage_report_dir: "coverage_reports"
+
+# 性能测试配置
+performance_test:
+  enabled: true
+  concurrent_users: 10
+  test_duration: 60  # 秒
+  ramp_up_time: 10   # 秒
+
+  # 场景配置
+  scenarios:
+    - name: "video_generation"
+      weight: 50
+      endpoint: "/video/generate"
+
+    - name: "material_search"
+      weight: 30
+      endpoint: "/materials/search"
+
+    - name: "user_auth"
+      weight: 20
+      endpoint: "/auth/login"
+
+# 集成测试配置
+integration_test:
+  enabled: true
+  test_external_apis: false
+  test_database: true
+  test_cache: true
+  test_file_operations: true
+
+  # 环境隔离
+  isolated_database: true
+  isolated_cache: true
+  isolated_file_system: true

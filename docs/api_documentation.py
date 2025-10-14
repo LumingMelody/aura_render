@@ -1,0 +1,1531 @@
+"""
+API Documentation Generator
+
+Generates comprehensive OpenAPI/Swagger documentation for Aura Render API.
+Includes all endpoints, schemas, authentication, and examples.
+"""
+
+from typing import Dict, Any, List, Optional
+import json
+from pathlib import Path
+
+# OpenAPI specification structure
+OPENAPI_SPEC = {
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Aura Render API",
+        "version": "1.0.0",
+        "description": """
+# Aura Render API Documentation
+
+Aura Render is an AI-powered video generation platform that transforms text into professional videos.
+
+## Features
+- **AI Content Analysis**: Intelligent analysis of input text for optimal video generation
+- **Material Matching**: Automatic matching and acquisition of relevant video materials
+- **Real-time Processing**: WebSocket-based real-time progress tracking
+- **Multi-format Support**: Support for various video formats and quality levels
+- **Enterprise Security**: JWT authentication, rate limiting, and audit logging
+- **Batch Processing**: Handle multiple video generation requests efficiently
+
+## Authentication
+Most endpoints require authentication using JWT tokens. Include the token in the Authorization header:
+```
+Authorization: Bearer <your-jwt-token>
+```
+
+## Rate Limiting
+API requests are subject to rate limiting:
+- **Free Users**: 10 requests/minute, 600 requests/hour
+- **Premium Users**: 100 requests/minute, 6000 requests/hour
+- **Enterprise**: Custom limits available
+
+## Error Handling
+All errors follow a consistent format:
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable error message",
+    "details": {
+      "field": "Additional error context"
+    }
+  }
+}
+```
+        """,
+        "termsOfService": "https://aurarender.com/terms",
+        "contact": {
+            "name": "Aura Render Support",
+            "url": "https://aurarender.com/support",
+            "email": "support@aurarender.com"
+        },
+        "license": {
+            "name": "Commercial License",
+            "url": "https://aurarender.com/license"
+        }
+    },
+    "servers": [
+        {
+            "url": "https://api.aurarender.com/v1",
+            "description": "Production server"
+        },
+        {
+            "url": "https://staging-api.aurarender.com/v1",
+            "description": "Staging server"
+        },
+        {
+            "url": "http://localhost:8000",
+            "description": "Development server"
+        }
+    ],
+    "security": [
+        {
+            "BearerAuth": []
+        }
+    ],
+    "components": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "JWT token obtained from /auth/login endpoint"
+            }
+        },
+        "schemas": {
+            # User and Authentication Schemas
+            "UserLogin": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "example": "user@example.com"
+                    },
+                    "password": {
+                        "type": "string",
+                        "format": "password",
+                        "minLength": 8,
+                        "example": "securePassword123"
+                    },
+                    "remember_me": {
+                        "type": "boolean",
+                        "default": False
+                    }
+                }
+            },
+            "UserRegistration": {
+                "type": "object",
+                "required": ["email", "password", "first_name", "last_name"],
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "example": "newuser@example.com"
+                    },
+                    "password": {
+                        "type": "string",
+                        "format": "password",
+                        "minLength": 8,
+                        "example": "securePassword123"
+                    },
+                    "first_name": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "example": "John"
+                    },
+                    "last_name": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "example": "Doe"
+                    },
+                    "company": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "example": "Acme Corp"
+                    },
+                    "phone": {
+                        "type": "string",
+                        "example": "+1-555-123-4567"
+                    }
+                }
+            },
+            "TokenResponse": {
+                "type": "object",
+                "properties": {
+                    "access_token": {
+                        "type": "string",
+                        "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    },
+                    "refresh_token": {
+                        "type": "string",
+                        "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    },
+                    "token_type": {
+                        "type": "string",
+                        "example": "Bearer"
+                    },
+                    "expires_in": {
+                        "type": "integer",
+                        "example": 3600
+                    }
+                }
+            },
+            "UserProfile": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "example": "usr_123456789"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "example": "user@example.com"
+                    },
+                    "first_name": {
+                        "type": "string",
+                        "example": "John"
+                    },
+                    "last_name": {
+                        "type": "string",
+                        "example": "Doe"
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": ["admin", "premium", "standard", "trial"],
+                        "example": "premium"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2023-12-01T10:00:00Z"
+                    },
+                    "subscription": {
+                        "$ref": "#/components/schemas/Subscription"
+                    }
+                }
+            },
+            
+            # Video Generation Schemas
+            "VideoGenerationRequest": {
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 10000,
+                        "example": "Create an engaging promotional video about our new AI-powered productivity tool that helps teams collaborate more effectively.",
+                        "description": "The text content to convert into video"
+                    },
+                    "video_type": {
+                        "type": "string",
+                        "enum": ["promotional", "educational", "social", "presentation", "story"],
+                        "example": "promotional",
+                        "description": "Type of video to generate"
+                    },
+                    "style": {
+                        "type": "object",
+                        "properties": {
+                            "theme": {
+                                "type": "string",
+                                "enum": ["corporate", "modern", "playful", "elegant", "tech"],
+                                "example": "modern"
+                            },
+                            "color_scheme": {
+                                "type": "string",
+                                "example": "blue-gradient"
+                            },
+                            "font_family": {
+                                "type": "string",
+                                "example": "Roboto"
+                            }
+                        }
+                    },
+                    "audio": {
+                        "type": "object",
+                        "properties": {
+                            "voice": {
+                                "type": "string",
+                                "enum": ["xiaoyun", "xiaogang", "xiaoxiao", "xiaomeng"],
+                                "example": "xiaoyun",
+                                "description": "Text-to-speech voice selection"
+                            },
+                            "speed": {
+                                "type": "number",
+                                "minimum": 0.5,
+                                "maximum": 2.0,
+                                "example": 1.0,
+                                "description": "Speech speed multiplier"
+                            },
+                            "background_music": {
+                                "type": "boolean",
+                                "example": True,
+                                "description": "Whether to add background music"
+                            }
+                        }
+                    },
+                    "video_config": {
+                        "type": "object",
+                        "properties": {
+                            "resolution": {
+                                "type": "string",
+                                "enum": ["1920x1080", "1280x720", "3840x2160"],
+                                "example": "1920x1080"
+                            },
+                            "fps": {
+                                "type": "integer",
+                                "enum": [24, 30, 60],
+                                "example": 30
+                            },
+                            "duration_limit": {
+                                "type": "integer",
+                                "minimum": 10,
+                                "maximum": 300,
+                                "example": 60,
+                                "description": "Maximum video duration in seconds"
+                            },
+                            "format": {
+                                "type": "string",
+                                "enum": ["mp4", "mov", "avi"],
+                                "example": "mp4"
+                            }
+                        }
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["low", "normal", "high"],
+                        "example": "normal",
+                        "description": "Processing priority (premium feature)"
+                    }
+                }
+            },
+            "VideoGenerationResponse": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "example": "task_abcd1234efgh5678",
+                        "description": "Unique task identifier for tracking"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["queued", "processing", "completed", "failed"],
+                        "example": "queued"
+                    },
+                    "estimated_completion": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2023-12-01T10:05:00Z"
+                    },
+                    "websocket_url": {
+                        "type": "string",
+                        "example": "wss://api.aurarender.com/ws/tasks/task_abcd1234efgh5678",
+                        "description": "WebSocket URL for real-time progress updates"
+                    }
+                }
+            },
+            "TaskStatus": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "example": "task_abcd1234efgh5678"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["queued", "processing", "completed", "failed", "cancelled"],
+                        "example": "processing"
+                    },
+                    "progress": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "example": 45,
+                        "description": "Progress percentage"
+                    },
+                    "current_stage": {
+                        "type": "string",
+                        "example": "material_matching",
+                        "description": "Current processing stage"
+                    },
+                    "message": {
+                        "type": "string",
+                        "example": "Matching video materials...",
+                        "description": "Human-readable status message"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2023-12-01T10:00:00Z"
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2023-12-01T10:00:30Z"
+                    },
+                    "completed_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2023-12-01T10:03:45Z"
+                    },
+                    "result": {
+                        "type": "object",
+                        "properties": {
+                            "video_url": {
+                                "type": "string",
+                                "example": "https://cdn.aurarender.com/videos/usr_123/video_abc123.mp4"
+                            },
+                            "thumbnail_url": {
+                                "type": "string",
+                                "example": "https://cdn.aurarender.com/thumbs/usr_123/thumb_abc123.jpg"
+                            },
+                            "duration": {
+                                "type": "number",
+                                "example": 45.6
+                            },
+                            "file_size": {
+                                "type": "integer",
+                                "example": 12345678
+                            }
+                        }
+                    }
+                }
+            },
+            
+            # Material and Asset Schemas
+            "MaterialSearchRequest": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "example": "technology startup office teamwork",
+                        "description": "Search query for materials"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["video", "image", "audio"],
+                        "example": "video"
+                    },
+                    "duration_min": {
+                        "type": "number",
+                        "example": 5.0
+                    },
+                    "duration_max": {
+                        "type": "number",
+                        "example": 30.0
+                    },
+                    "resolution": {
+                        "type": "string",
+                        "enum": ["HD", "FHD", "4K"],
+                        "example": "FHD"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "example": 20
+                    }
+                }
+            },
+            "Material": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "example": "mat_123456789"
+                    },
+                    "title": {
+                        "type": "string",
+                        "example": "Modern Office Teamwork"
+                    },
+                    "description": {
+                        "type": "string",
+                        "example": "Professional team collaborating in modern office space"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["video", "image", "audio"],
+                        "example": "video"
+                    },
+                    "url": {
+                        "type": "string",
+                        "example": "https://cdn.aurarender.com/materials/video_123.mp4"
+                    },
+                    "thumbnail_url": {
+                        "type": "string",
+                        "example": "https://cdn.aurarender.com/materials/thumb_123.jpg"
+                    },
+                    "duration": {
+                        "type": "number",
+                        "example": 15.3
+                    },
+                    "resolution": {
+                        "type": "string",
+                        "example": "1920x1080"
+                    },
+                    "file_size": {
+                        "type": "integer",
+                        "example": 5242880
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "example": ["office", "teamwork", "technology", "professional"]
+                    }
+                }
+            },
+            
+            # Analytics and Monitoring Schemas
+            "AnalyticsData": {
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "example": "usr_123456789"
+                    },
+                    "videos_generated": {
+                        "type": "integer",
+                        "example": 25
+                    },
+                    "total_duration": {
+                        "type": "number",
+                        "example": 1250.5,
+                        "description": "Total duration of generated videos in seconds"
+                    },
+                    "api_calls": {
+                        "type": "integer",
+                        "example": 150
+                    },
+                    "quota_usage": {
+                        "type": "object",
+                        "properties": {
+                            "used": {
+                                "type": "integer",
+                                "example": 25
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "example": 100
+                            },
+                            "reset_date": {
+                                "type": "string",
+                                "format": "date",
+                                "example": "2024-01-01"
+                            }
+                        }
+                    },
+                    "popular_styles": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "style": {
+                                    "type": "string",
+                                    "example": "modern"
+                                },
+                                "count": {
+                                    "type": "integer",
+                                    "example": 12
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            
+            # Error Schemas
+            "Error": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "example": "VALIDATION_ERROR"
+                            },
+                            "message": {
+                                "type": "string",
+                                "example": "Invalid request parameters"
+                            },
+                            "details": {
+                                "type": "object",
+                                "example": {
+                                    "text": "Text content is required"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "RateLimitError": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "example": "RATE_LIMIT_EXCEEDED"
+                            },
+                            "message": {
+                                "type": "string",
+                                "example": "Rate limit exceeded"
+                            },
+                            "details": {
+                                "type": "object",
+                                "properties": {
+                                    "limit": {
+                                        "type": "integer",
+                                        "example": 100
+                                    },
+                                    "remaining": {
+                                        "type": "integer",
+                                        "example": 0
+                                    },
+                                    "reset_time": {
+                                        "type": "integer",
+                                        "example": 1701432000
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "paths": {
+        # Authentication Endpoints
+        "/auth/register": {
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "Register a new user",
+                "description": "Create a new user account with email verification",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UserRegistration"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "User registered successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserProfile"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid registration data",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Email already registered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/login": {
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "User login",
+                "description": "Authenticate user and get JWT tokens",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UserLogin"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Login successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TokenResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many login attempts",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RateLimitError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/refresh": {
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "Refresh JWT token",
+                "description": "Get a new access token using refresh token",
+                "security": [{"BearerAuth": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["refresh_token"],
+                                "properties": {
+                                    "refresh_token": {
+                                        "type": "string",
+                                        "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Token refreshed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TokenResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid refresh token",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "User logout",
+                "description": "Invalidate current session tokens",
+                "security": [{"BearerAuth": []}],
+                "responses": {
+                    "200": {
+                        "description": "Logout successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Logged out successfully"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        
+        # Video Generation Endpoints
+        "/video/generate": {
+            "post": {
+                "tags": ["Video Generation"],
+                "summary": "Generate video from text",
+                "description": "Create a video from text content using AI processing",
+                "security": [{"BearerAuth": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/VideoGenerationRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Video generation task created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/VideoGenerationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request parameters",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication required",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RateLimitError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/video/batch": {
+            "post": {
+                "tags": ["Video Generation"],
+                "summary": "Generate multiple videos in batch",
+                "description": "Create multiple videos from a list of text content",
+                "security": [{"BearerAuth": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["requests"],
+                                "properties": {
+                                    "requests": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/components/schemas/VideoGenerationRequest"
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 10
+                                    },
+                                    "batch_priority": {
+                                        "type": "string",
+                                        "enum": ["low", "normal", "high"],
+                                        "example": "normal"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Batch processing started",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "batch_id": {
+                                            "type": "string",
+                                            "example": "batch_abcd1234"
+                                        },
+                                        "task_ids": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            },
+                                            "example": ["task_001", "task_002", "task_003"]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        
+        # Task Management Endpoints
+        "/tasks/{task_id}": {
+            "get": {
+                "tags": ["Task Management"],
+                "summary": "Get task status",
+                "description": "Retrieve the current status of a video generation task",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    {
+                        "name": "task_id",
+                        "in": "path",
+                        "required": True,
+                        "description": "Task identifier",
+                        "schema": {
+                            "type": "string",
+                            "example": "task_abcd1234efgh5678"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Task status retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskStatus"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Task not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["Task Management"],
+                "summary": "Cancel task",
+                "description": "Cancel a running or queued video generation task",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    {
+                        "name": "task_id",
+                        "in": "path",
+                        "required": True,
+                        "description": "Task identifier",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Task cancelled successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Task cancelled successfully"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Task not found"
+                    },
+                    "409": {
+                        "description": "Task cannot be cancelled (already completed)"
+                    }
+                }
+            }
+        },
+        "/tasks": {
+            "get": {
+                "tags": ["Task Management"],
+                "summary": "List user tasks",
+                "description": "Get a list of all tasks for the authenticated user",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": False,
+                        "description": "Filter by task status",
+                        "schema": {
+                            "type": "string",
+                            "enum": ["queued", "processing", "completed", "failed", "cancelled"]
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": False,
+                        "description": "Maximum number of tasks to return",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20
+                        }
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "required": False,
+                        "description": "Number of tasks to skip",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 0
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tasks retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "tasks": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/TaskStatus"
+                                            }
+                                        },
+                                        "total": {
+                                            "type": "integer",
+                                            "example": 45
+                                        },
+                                        "has_more": {
+                                            "type": "boolean",
+                                            "example": True
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        
+        # Material and Asset Endpoints
+        "/materials/search": {
+            "post": {
+                "tags": ["Materials"],
+                "summary": "Search for materials",
+                "description": "Search for video, image, or audio materials",
+                "security": [{"BearerAuth": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MaterialSearchRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Search results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "materials": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Material"
+                                            }
+                                        },
+                                        "total": {
+                                            "type": "integer",
+                                            "example": 156
+                                        },
+                                        "query_time": {
+                                            "type": "number",
+                                            "example": 0.045
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        
+        # Analytics and Monitoring Endpoints
+        "/analytics/usage": {
+            "get": {
+                "tags": ["Analytics"],
+                "summary": "Get usage analytics",
+                "description": "Retrieve usage statistics for the authenticated user",
+                "security": [{"BearerAuth": []}],
+                "parameters": [
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "required": False,
+                        "description": "Time period for analytics",
+                        "schema": {
+                            "type": "string",
+                            "enum": ["day", "week", "month", "year"],
+                            "default": "month"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Analytics data retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AnalyticsData"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        
+        # Health and System Endpoints
+        "/health": {
+            "get": {
+                "tags": ["System"],
+                "summary": "Health check",
+                "description": "Check system health and status",
+                "responses": {
+                    "200": {
+                        "description": "System is healthy",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "healthy"
+                                        },
+                                        "version": {
+                                            "type": "string",
+                                            "example": "1.0.0"
+                                        },
+                                        "services": {
+                                            "type": "object",
+                                            "properties": {
+                                                "database": {
+                                                    "type": "string",
+                                                    "example": "healthy"
+                                                },
+                                                "redis": {
+                                                    "type": "string",
+                                                    "example": "healthy"
+                                                },
+                                                "ai_service": {
+                                                    "type": "string",
+                                                    "example": "healthy"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Authentication",
+            "description": "User authentication and authorization"
+        },
+        {
+            "name": "Video Generation",
+            "description": "AI-powered video generation from text"
+        },
+        {
+            "name": "Task Management",
+            "description": "Manage video generation tasks"
+        },
+        {
+            "name": "Materials",
+            "description": "Search and manage video materials"
+        },
+        {
+            "name": "Analytics",
+            "description": "Usage analytics and reporting"
+        },
+        {
+            "name": "System",
+            "description": "System health and monitoring"
+        }
+    ]
+}
+
+
+def generate_openapi_json(output_path: str = "docs/openapi.json"):
+    """Generate OpenAPI JSON specification file"""
+    output_file = Path(output_path)
+    output_file.parent.mkdir(exist_ok=True)
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(OPENAPI_SPEC, f, indent=2, ensure_ascii=False)
+    
+    print(f"OpenAPI specification generated: {output_file}")
+
+
+def generate_swagger_html(output_path: str = "docs/swagger.html"):
+    """Generate Swagger UI HTML file"""
+    swagger_html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aura Render API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui.css" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+        body {
+            margin:0;
+            background: #fafafa;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    
+    <script src="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui-standalone-preset.js"></script>
+    <script>
+    window.onload = function() {
+        const ui = SwaggerUIBundle({
+            url: './openapi.json',
+            dom_id: '#swagger-ui',
+            deepLinking: true,
+            presets: [
+                SwaggerUIBundle.presets.apis,
+                SwaggerUIStandalonePreset
+            ],
+            plugins: [
+                SwaggerUIBundle.plugins.DownloadUrl
+            ],
+            layout: "StandaloneLayout",
+            defaultModelsExpandDepth: 2,
+            defaultModelExpandDepth: 2,
+            docExpansion: "list",
+            filter: true,
+            showExtensions: true,
+            showCommonExtensions: true,
+            tryItOutEnabled: true
+        });
+    };
+    </script>
+</body>
+</html>"""
+    
+    output_file = Path(output_path)
+    output_file.parent.mkdir(exist_ok=True)
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(swagger_html)
+    
+    print(f"Swagger UI HTML generated: {output_file}")
+
+
+def generate_postman_collection(output_path: str = "docs/postman_collection.json"):
+    """Generate Postman collection for API testing"""
+    collection = {
+        "info": {
+            "name": "Aura Render API",
+            "description": "Comprehensive API collection for Aura Render video generation platform",
+            "version": "1.0.0",
+            "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "auth": {
+            "type": "bearer",
+            "bearer": [
+                {
+                    "key": "token",
+                    "value": "{{auth_token}}",
+                    "type": "string"
+                }
+            ]
+        },
+        "variable": [
+            {
+                "key": "base_url",
+                "value": "http://localhost:8000",
+                "type": "string"
+            },
+            {
+                "key": "auth_token",
+                "value": "",
+                "type": "string"
+            }
+        ],
+        "item": [
+            {
+                "name": "Authentication",
+                "item": [
+                    {
+                        "name": "Register User",
+                        "request": {
+                            "method": "POST",
+                            "url": "{{base_url}}/auth/register",
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                }
+                            ],
+                            "body": {
+                                "mode": "raw",
+                                "raw": json.dumps({
+                                    "email": "user@example.com",
+                                    "password": "securePassword123",
+                                    "first_name": "John",
+                                    "last_name": "Doe",
+                                    "company": "Acme Corp"
+                                }, indent=2)
+                            }
+                        }
+                    },
+                    {
+                        "name": "Login",
+                        "event": [
+                            {
+                                "listen": "test",
+                                "script": {
+                                    "exec": [
+                                        "if (pm.response.code === 200) {",
+                                        "    const response = pm.response.json();",
+                                        "    pm.collectionVariables.set('auth_token', response.access_token);",
+                                        "}"
+                                    ]
+                                }
+                            }
+                        ],
+                        "request": {
+                            "method": "POST",
+                            "url": "{{base_url}}/auth/login",
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                }
+                            ],
+                            "body": {
+                                "mode": "raw",
+                                "raw": json.dumps({
+                                    "email": "user@example.com",
+                                    "password": "securePassword123"
+                                }, indent=2)
+                            }
+                        }
+                    }
+                ]
+            },
+            {
+                "name": "Video Generation",
+                "item": [
+                    {
+                        "name": "Generate Video",
+                        "request": {
+                            "method": "POST",
+                            "url": "{{base_url}}/video/generate",
+                            "auth": {
+                                "type": "bearer",
+                                "bearer": [
+                                    {
+                                        "key": "token",
+                                        "value": "{{auth_token}}",
+                                        "type": "string"
+                                    }
+                                ]
+                            },
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                }
+                            ],
+                            "body": {
+                                "mode": "raw",
+                                "raw": json.dumps({
+                                    "text": "Create an engaging promotional video about our new AI-powered productivity tool that helps teams collaborate more effectively.",
+                                    "video_type": "promotional",
+                                    "style": {
+                                        "theme": "modern",
+                                        "color_scheme": "blue-gradient"
+                                    },
+                                    "audio": {
+                                        "voice": "xiaoyun",
+                                        "speed": 1.0,
+                                        "background_music": True
+                                    },
+                                    "video_config": {
+                                        "resolution": "1920x1080",
+                                        "fps": 30,
+                                        "format": "mp4"
+                                    }
+                                }, indent=2)
+                            }
+                        }
+                    },
+                    {
+                        "name": "Check Task Status",
+                        "request": {
+                            "method": "GET",
+                            "url": "{{base_url}}/tasks/{{task_id}}",
+                            "auth": {
+                                "type": "bearer",
+                                "bearer": [
+                                    {
+                                        "key": "token",
+                                        "value": "{{auth_token}}",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            },
+            {
+                "name": "Materials",
+                "item": [
+                    {
+                        "name": "Search Materials",
+                        "request": {
+                            "method": "POST",
+                            "url": "{{base_url}}/materials/search",
+                            "auth": {
+                                "type": "bearer",
+                                "bearer": [
+                                    {
+                                        "key": "token",
+                                        "value": "{{auth_token}}",
+                                        "type": "string"
+                                    }
+                                ]
+                            },
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                }
+                            ],
+                            "body": {
+                                "mode": "raw",
+                                "raw": json.dumps({
+                                    "query": "technology startup office teamwork",
+                                    "type": "video",
+                                    "duration_min": 5.0,
+                                    "duration_max": 30.0,
+                                    "resolution": "FHD",
+                                    "limit": 20
+                                }, indent=2)
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+    
+    output_file = Path(output_path)
+    output_file.parent.mkdir(exist_ok=True)
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(collection, f, indent=2)
+    
+    print(f"Postman collection generated: {output_file}")
+
+
+def main():
+    """Generate all API documentation files"""
+    print("Generating Aura Render API Documentation...")
+    
+    # Create docs directory
+    Path("docs").mkdir(exist_ok=True)
+    
+    # Generate OpenAPI specification
+    generate_openapi_json()
+    
+    # Generate Swagger UI
+    generate_swagger_html()
+    
+    # Generate Postman collection
+    generate_postman_collection()
+    
+    print("\n✅ API documentation generated successfully!")
+    print("\nFiles created:")
+    print("- docs/openapi.json - OpenAPI 3.0 specification")
+    print("- docs/swagger.html - Interactive Swagger UI")
+    print("- docs/postman_collection.json - Postman testing collection")
+    
+    print("\nTo view the documentation:")
+    print("1. Open docs/swagger.html in your browser")
+    print("2. Or serve the docs directory with a local HTTP server")
+    print("3. Import postman_collection.json into Postman for API testing")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,165 @@
+{
+  "info": {
+    "name": "Aura Render API",
+    "description": "Comprehensive API collection for Aura Render video generation platform",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/register",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securePassword123\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"company\": \"Acme Corp\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('auth_token', response.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securePassword123\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Video Generation",
+      "item": [
+        {
+          "name": "Generate Video",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/video/generate",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Create an engaging promotional video about our new AI-powered productivity tool that helps teams collaborate more effectively.\",\n  \"video_type\": \"promotional\",\n  \"style\": {\n    \"theme\": \"modern\",\n    \"color_scheme\": \"blue-gradient\"\n  },\n  \"audio\": {\n    \"voice\": \"xiaoyun\",\n    \"speed\": 1.0,\n    \"background_music\": true\n  },\n  \"video_config\": {\n    \"resolution\": \"1920x1080\",\n    \"fps\": 30,\n    \"format\": \"mp4\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Check Task Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/tasks/{{task_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Materials",
+      "item": [
+        {
+          "name": "Search Materials",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/materials/search",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"technology startup office teamwork\",\n  \"type\": \"video\",\n  \"duration_min\": 5.0,\n  \"duration_max\": 30.0,\n  \"resolution\": \"FHD\",\n  \"limit\": 20\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

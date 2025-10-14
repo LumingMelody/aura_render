@@ -1,0 +1,87 @@
+# Core web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+
+# Database and ORM
+sqlalchemy==2.0.23
+alembic==1.12.1
+
+# Async and task queue
+celery==5.3.4
+redis==5.0.1
+kombu==5.3.4
+
+# Data validation and serialization
+pydantic==2.5.0
+pydantic-settings==2.0.3
+
+# HTTP client
+httpx==0.25.2
+requests==2.31.0
+
+# File handling and processing
+pillow==10.1.0
+python-multipart==0.0.6
+aiofiles==23.2.1
+
+# Video and audio processing
+ffmpeg-python==0.2.0
+moviepy==2.2.1
+opencv-python==4.8.1.78
+numpy==1.24.4
+
+# Audio processing
+librosa==0.10.1
+soundfile==0.12.1
+pydub==0.25.1
+
+# Image processing
+opencv-python-headless==4.8.1.78
+scikit-image==0.22.0
+
+# Machine learning and AI
+torch>=2.0.0
+torchvision>=0.15.0
+transformers>=4.37.0
+diffusers==0.24.0
+
+# Video Understanding Models
+ultralytics>=8.0.0          # YOLO object detection
+# QwenVL support included in transformers>=4.37.0
+
+# Optional AI Models (install as needed):
+# git+https://github.com/openai/CLIP.git     # CLIP for style analysis
+# openai-whisper>=20230314                   # Whisper for speech recognition
+# accelerate>=0.26.0                         # Model loading optimization
+
+# Database for conversations
+sqlite3                     # Built-in Python, no install needed
+
+# Natural language processing
+spacy==3.7.2
+nltk==3.8.1
+
+# Date and time
+python-dateutil==2.8.2
+
+# Environment and configuration
+python-dotenv==1.0.0
+
+# Logging and monitoring
+loguru==0.7.2
+prometheus-client==0.19.0
+
+# Authentication and security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Cloud storage
+boto3==1.34.0
+google-cloud-storage==2.10.0
+azure-storage-blob==12.19.0
+
+# Utilities
+click==8.1.7
+tqdm==4.66.1
+psutil==5.9.6

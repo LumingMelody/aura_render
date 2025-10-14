@@ -1,0 +1,160 @@
+# ================================
+# Python
+# ================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ================================
+# Environment Variables (IMPORTANT!)
+# ================================
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.crt
+
+# ================================
+# Database
+# ================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# ================================
+# Logs and Temporary Files
+# ================================
+*.log
+logs/
+logs2.txt
+temp/
+tmp/
+*.tmp
+cache/
+.cache/
+
+# ================================
+# Media and Output Files
+# ================================
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.mp3
+*.wav
+*.flv
+output/
+uploads/
+renders/
+
+# ================================
+# IDE and Editors
+# ================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# ================================
+# Testing and Coverage
+# ================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+pytestdebug.log
+
+# ================================
+# Jupyter Notebook
+# ================================
+.ipynb_checkpoints
+*.ipynb
+
+# ================================
+# Virtual Environments
+# ================================
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ================================
+# Docker (exclude runtime data)
+# ================================
+docker-compose.override.yml
+
+# ================================
+# OS Files
+# ================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ================================
+# Backup Files
+# ================================
+*.bak
+*.backup
+*~
+
+# ================================
+# Model Files (too large for git)
+# ================================
+*.pt
+*.pth
+*.onnx
+*.h5
+*.pb
+models/checkpoints/
+models/pretrained/
+
+# ================================
+# Node.js (if any frontend)
+# ================================
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# ================================
+# Security and Secrets
+# ================================
+secrets/
+credentials/
+*.env.production
+.aws/
+.azure/
+
+# ================================
+# Keep these files
+# ================================
+!.gitignore
+!.dockerignore
+!.env.example

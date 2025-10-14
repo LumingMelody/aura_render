@@ -1,0 +1,211 @@
+# Multi-stage Docker build for Aura Render video generation platform
+FROM python:3.11-slim as base
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    # Essential system packages
+    curl \
+    wget \
+    git \
+    build-essential \
+    pkg-config \
+    # FFmpeg and multimedia support
+    ffmpeg \
+    libavformat-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    libswscale-dev \
+    libavresample-dev \
+    # Image processing libraries
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    libwebp-dev \
+    # Audio libraries
+    libsndfile1-dev \
+    libfftw3-dev \
+    # Database support
+    libsqlite3-dev \
+    # Other essential libraries
+    libssl-dev \
+    libffi-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Development stage with additional tools
+FROM base as development
+
+# Install development dependencies
+RUN apt-get update && apt-get install -y \
+    # Development tools
+    vim \
+    htop \
+    tree \
+    # Debugging tools
+    gdb \
+    strace \
+    # Network tools
+    netcat-openbsd \
+    telnet \
+    # Additional Python tools
+    && rm -rf /var/lib/apt/lists/*
+
+# Install development Python packages
+COPY requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/temp /app/output /app/logs /app/cache
+
+# Set permissions
+RUN chown -R appuser:appuser /app
+
+# Switch to app user
+USER appuser
+
+# Expose ports
+EXPOSE 8000 5555
+
+# Development command with hot reload
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "info"]
+
+# Production stage - optimized for production deployment
+FROM base as production
+
+# Install production-only dependencies
+RUN apt-get update && apt-get install -y \
+    # Production monitoring tools
+    htop \
+    # Minimal tools for container health
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy application code (excluding dev files)
+COPY --exclude=tests --exclude=*.md --exclude=.git . .
+
+# Install only production Python dependencies
+RUN pip install --no-cache-dir gunicorn uvicorn[standard]
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/temp /app/output /app/logs /app/cache /app/uploads \
+    && chown -R appuser:appuser /app \
+    && chmod -R 755 /app
+
+# Create volume mount points
+VOLUME ["/app/temp", "/app/output", "/app/logs", "/app/uploads"]
+
+# Switch to app user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port
+EXPOSE 8000
+
+# Production command with Gunicorn
+CMD ["gunicorn", "app:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "300", "--keep-alive", "2", "--max-requests", "1000", "--max-requests-jitter", "100", "--access-logfile", "-", "--error-logfile", "-"]
+
+# Worker stage for Celery workers
+FROM base as worker
+
+# Install worker-specific dependencies (if any)
+RUN apt-get update && apt-get install -y \
+    # Additional tools for workers
+    htop \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/temp /app/output /app/logs /app/cache \
+    && chown -R appuser:appuser /app
+
+# Switch to app user  
+USER appuser
+
+# Worker command
+CMD ["celery", "-A", "task_queue.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+
+# Scheduler stage for Celery beat
+FROM base as scheduler
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/temp /app/output /app/logs /app/cache \
+    && chown -R appuser:appuser /app
+
+# Switch to app user
+USER appuser
+
+# Scheduler command
+CMD ["celery", "-A", "task_queue.celery_app", "beat", "--loglevel=info"]
+
+# GPU-enabled stage for AI processing
+FROM nvidia/cuda:12.0-devel-ubuntu22.04 as gpu
+
+# Install Python and system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
+    # FFmpeg with NVIDIA support
+    ffmpeg \
+    # CUDA libraries
+    libnvidia-encode-470 \
+    libnvidia-decode-470 \
+    # Other dependencies
+    curl \
+    wget \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python alias
+RUN ln -s /usr/bin/python3.11 /usr/bin/python
+
+# Create app user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Set work directory
+WORKDIR /app
+
+# Install Python packages with GPU support
+COPY requirements-gpu.txt ./
+RUN pip install --no-cache-dir -r requirements-gpu.txt
+
+# Copy application
+COPY . .
+
+# Set permissions
+RUN chown -R appuser:appuser /app
+
+USER appuser
+
+# GPU-enabled production command
+CMD ["gunicorn", "app:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "600"]
