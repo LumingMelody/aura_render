@@ -37,15 +37,9 @@ class VGPGenerateRequest(BaseModel):
     # 工作流模板（默认使用新工作流）
     template: str = Field(default="vgp_new_pipeline", description="工作流模板名称")
 
-    # 工作流参数
-    max_parallel_nodes: int = Field(default=5, ge=1, le=10, description="最大并行节点数")
-    total_timeout: float = Field(default=3600.0, ge=60, le=7200, description="总超时时间（秒）")
-    auto_retry: bool = Field(default=True, description="失败时自动重试")
-    enable_monitoring: bool = Field(default=True, description="启用监控")
-
-    # 会话信息
-    session_id: Optional[str] = None
-    user_id: Optional[str] = None
+    # 会话信息（可选）
+    session_id: Optional[str] = Field(None, description="会话ID，用于关联多次请求")
+    user_id: Optional[str] = Field(None, description="用户ID，用于用户行为分析")
 
     @field_validator('template')
     @classmethod

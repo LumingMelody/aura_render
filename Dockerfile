@@ -1,5 +1,5 @@
 # Multi-stage Docker build for Aura Render video generation platform
-FROM python:3.11-slim as base
+FROM python:3.11-slim AS base
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies
+# Install system dependencies (FFmpeg已移除，使用阿里云IMS进行视频处理)
 RUN apt-get update && apt-get install -y \
     # Essential system packages
     curl \
@@ -16,22 +16,20 @@ RUN apt-get update && apt-get install -y \
     git \
     build-essential \
     pkg-config \
-    # FFmpeg and multimedia support
-    ffmpeg \
-    libavformat-dev \
-    libavcodec-dev \
-    libavdevice-dev \
-    libavutil-dev \
-    libswscale-dev \
-    libavresample-dev \
-    # Image processing libraries
+    # Image processing libraries (保留，用于图片预处理)
     libjpeg-dev \
     libpng-dev \
     libtiff-dev \
     libwebp-dev \
-    # Audio libraries
-    libsndfile1-dev \
-    libfftw3-dev \
+    # Minimal OpenCV dependencies (even headless version needs these)
+    libglvnd0 \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    libgomp1 \
+    # Audio processing libraries
+    libsndfile1 \
     # Database support
     libsqlite3-dev \
     # Other essential libraries
@@ -48,10 +46,11 @@ WORKDIR /app
 
 # Copy requirements first for better caching
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Use Huawei Cloud PyPI mirror for faster downloads in China
+RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.huaweicloud.com/repository/pypi/simple/
 
 # Development stage with additional tools
-FROM base as development
+FROM base AS development
 
 # Install development dependencies
 RUN apt-get update && apt-get install -y \
@@ -91,7 +90,7 @@ EXPOSE 8000 5555
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "info"]
 
 # Production stage - optimized for production deployment
-FROM base as production
+FROM base AS production
 
 # Install production-only dependencies
 RUN apt-get update && apt-get install -y \
@@ -130,7 +129,7 @@ EXPOSE 8000
 CMD ["gunicorn", "app:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "300", "--keep-alive", "2", "--max-requests", "1000", "--max-requests-jitter", "100", "--access-logfile", "-", "--error-logfile", "-"]
 
 # Worker stage for Celery workers
-FROM base as worker
+FROM base AS worker
 
 # Install worker-specific dependencies (if any)
 RUN apt-get update && apt-get install -y \
@@ -152,7 +151,7 @@ USER appuser
 CMD ["celery", "-A", "task_queue.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
 
 # Scheduler stage for Celery beat
-FROM base as scheduler
+FROM base AS scheduler
 
 # Copy application code
 COPY . .
@@ -168,16 +167,14 @@ USER appuser
 CMD ["celery", "-A", "task_queue.celery_app", "beat", "--loglevel=info"]
 
 # GPU-enabled stage for AI processing
-FROM nvidia/cuda:12.0-devel-ubuntu22.04 as gpu
+FROM nvidia/cuda:12.0-devel-ubuntu22.04 AS gpu
 
-# Install Python and system dependencies
+# Install Python and system dependencies (FFmpeg已移除，使用阿里云IMS)
 RUN apt-get update && apt-get install -y \
     python3.11 \
     python3.11-venv \
     python3-pip \
-    # FFmpeg with NVIDIA support
-    ffmpeg \
-    # CUDA libraries
+    # CUDA libraries (保留用于GPU加速推理)
     libnvidia-encode-470 \
     libnvidia-decode-470 \
     # Other dependencies

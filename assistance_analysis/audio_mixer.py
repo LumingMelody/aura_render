@@ -8,7 +8,7 @@
 
 import librosa
 import numpy as np
-import soundfile as sf
+# import soundfile as sf  # Lazy import - only when actually exporting
 from scipy import signal
 from typing import List, Dict, Any, Optional, Tuple
 import os
@@ -257,6 +257,7 @@ class AudioMixer:
 
     def _export_wav(self, audio: np.ndarray, path: str, bit_depth: int):
         """使用 soundfile 导出 WAV，支持 24bit"""
+        import soundfile as sf  # Lazy import
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
         if bit_depth == 16:

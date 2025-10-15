@@ -53,7 +53,7 @@ logs2.txt
 temp/
 tmp/
 *.tmp
-cache/
+# cache/ - DO NOT exclude, it contains code modules!
 
 # CI/CD
 .github/

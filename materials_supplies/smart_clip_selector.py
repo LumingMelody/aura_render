@@ -6,9 +6,10 @@ from dataclasses import dataclass
 import numpy as np
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-import cv2
-import whisper
-from ultralytics import YOLO
+# Lazy imports for cv2, whisper, YOLO to avoid startup failures
+# import cv2
+# import whisper
+# from ultralytics import YOLO
 
 from llm.qwen import QwenLLM
 
@@ -116,6 +117,7 @@ class SmartClipSelector:
         """
         def _process_scene_detection():
             try:
+                import cv2  # Lazy import
                 cap = cv2.VideoCapture(video_path)
                 fps = cap.get(cv2.CAP_PROP_FPS)
 
@@ -165,6 +167,8 @@ class SmartClipSelector:
         """
         def _process_face_detection():
             try:
+                import cv2  # Lazy import
+                from ultralytics import YOLO  # Lazy import
                 if self.yolo_model is None:
                     self.yolo_model = YOLO('yolov8n.pt')  # 轻量级模型
 
@@ -218,6 +222,7 @@ class SmartClipSelector:
         """
         def _process_speech_detection():
             try:
+                import whisper  # Lazy import
                 if self.whisper_model is None:
                     self.whisper_model = whisper.load_model("base")
 
@@ -255,6 +260,7 @@ class SmartClipSelector:
         """
         合并分析结果，生成候选片段
         """
+        import cv2  # Lazy import
         # 获取视频总时长
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -303,6 +309,7 @@ class SmartClipSelector:
         """提取关键帧"""
         import tempfile
         import os
+        import cv2  # Lazy import
 
         try:
             temp_dir = tempfile.mkdtemp()

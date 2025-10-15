@@ -72,7 +72,7 @@ class MetricsCollector:
         self.metrics: Dict[str, MetricSeries] = {}
         self.counters: Dict[str, int] = defaultdict(int)
         self.timers: Dict[str, List[float]] = defaultdict(list)
-        self.collection_enabled = self.settings.metrics_enabled
+        self.collection_enabled = self.settings.monitoring.metrics_enabled
         self._collection_task = None
         
     async def start_collection(self):

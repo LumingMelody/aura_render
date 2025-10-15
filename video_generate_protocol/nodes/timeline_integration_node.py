@@ -179,7 +179,17 @@ class TimelineIntegrationNode(BaseNode):
         video_start_time = current_time
 
         for clip in video_clips:
-            duration = clip["end"] - clip["start"]
+            # 兼容两种格式：
+            # 1. 有 start/end 的格式 (传统格式)
+            # 2. 只有 duration 的格式 (从万相生成的视频)
+            if "end" in clip and "start" in clip:
+                duration = clip["end"] - clip["start"]
+            elif "duration" in clip:
+                duration = clip["duration"]
+            else:
+                print(f"⚠️ [Node 16] Clip missing duration info: {clip}")
+                duration = 5.0  # 默认5秒
+
             video_clip = self._create_timeline_clip(
                 source=clip,
                 track_type="video",
@@ -195,7 +205,14 @@ class TimelineIntegrationNode(BaseNode):
             clips = audio_track.get("clips", [])
             track_start = video_start_time  # 音频对齐视频开始
             for clip in clips:
-                duration = clip["end"] - clip["start"]
+                # 兼容两种格式：有 start/end 或只有 duration
+                if "end" in clip and "start" in clip:
+                    duration = clip["end"] - clip["start"]
+                elif "duration" in clip:
+                    duration = clip["duration"]
+                else:
+                    duration = 3.0  # 音频默认3秒
+
                 audio_clip = self._create_timeline_clip(
                     source=clip,
                     track_type="audio",

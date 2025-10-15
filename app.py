@@ -193,6 +193,7 @@ class VideoGenerationRequest(BaseModel):
     keywords_id: Optional[List[str]] = Field(None, description="关键词列表（别名）", min_items=1, max_items=10)
     target_duration_id: Optional[int] = Field(None, description="目标时长（秒，别名）", ge=5, le=3600)
     user_description_id: Optional[str] = Field(None, description="用户描述（别名）", min_length=1, max_length=1000)
+    template: Optional[str] = Field(default="vgp_new_pipeline", description="VGP管道")
 
     # 新增多模态输入支持
     reference_media: Optional[ReferenceMediaGroup] = Field(default=None, description="参考媒体输入")

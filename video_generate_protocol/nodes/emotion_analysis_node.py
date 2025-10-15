@@ -196,8 +196,17 @@ class EmotionAnalysisNode(BaseNode):
             "default": "",
             "desc": "情感标签及权重，如 {'励志': 50, '冷静': 30}",
             "field_type": "text"
+        },
+        {
+            "name": "primary_emotion",
+            "label": "主要情感",
+            "type": str,
+            "required": True,
+            "default": "冷静",
+            "desc": "得分最高的主要情感类别",
+            "field_type": "text"
         }
-       
+
     ]
 
     file_upload_config = {
@@ -267,14 +276,19 @@ class EmotionAnalysisNode(BaseNode):
         except Exception as e:
             # 记录错误并使用fallback
             print(f"❌ EmotionAnalysisNode.generate 失败: {e}")
+            fallback_emotions = self._fallback_emotion_analysis(context.get("user_description_id", ""))
             analysis_result = EmotionAnalysisResult(
-                primary_emotions=self._fallback_emotion_analysis(context.get("user_description_id", "")),
+                primary_emotions=fallback_emotions,
                 emotion_tags=["冷静"],
                 confidence_score=0.3,
                 analysis_method="fallback",
                 recommendations={}
             )
             self.stats["fallback_calls"] += 1
+
+            # ✅ 输出降级分析结果
+            print(f"⚠️ [Node 2] 使用降级情感分析结果:")
+            print(f"   情感分布: {fallback_emotions}")
         finally:
             # 更新性能统计
             response_time = time.time() - start_time
@@ -294,8 +308,20 @@ class EmotionAnalysisNode(BaseNode):
                 analysis_result.primary_emotions
             )
 
+        # 提取主要情感（得分最高的）
+        primary_emotion = max(analysis_result.primary_emotions, key=analysis_result.primary_emotions.get) if analysis_result.primary_emotions else "冷静"
+
+        # ✅ 输出分析结果到日志
+        print(f"🎭 [Node 2] 情感基调分析结果:")
+        print(f"   主情感: {primary_emotion}")
+        print(f"   情感分布: {analysis_result.primary_emotions}")
+        print(f"   情感标签: {analysis_result.emotion_tags}")
+        print(f"   置信度: {analysis_result.confidence_score:.2f}")
+        print(f"   分析方法: {analysis_result.analysis_method}")
+
         return {
             "emotions_id": analysis_result.primary_emotions,
+            "primary_emotion": primary_emotion,  # ✅ 添加主要情感字段
             "emotion_analysis_result": analysis_result,
             "emotion_curve": analysis_result.emotion_curve,
             "music_recommendations": analysis_result.recommendations

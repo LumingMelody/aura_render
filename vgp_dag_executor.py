@@ -12,19 +12,19 @@ class VGPDAGExecutor:
     """VGP工作流DAG执行器"""
 
     def __init__(self):
-        # 节点ID到节点名称的映射
+        # 节点ID到节点名称的映射 (✅ 已修正为正确的业务流程顺序)
         self.node_mapping = {
             1: 'video_type_identification',    # 视频类型识别
             2: 'emotion_analysis',             # 情感基调分析
             3: 'shot_block_generation',        # 分镜块生成
             4: 'bgm_anchor_planning',          # BGM锚点规划
             5: 'asset_request',                # 素材需求解析（核心素材生成）
-            6: 'audio_processing',             # 音频处理
-            7: 'sfx_integration',              # 音效集成
-            8: 'transition_selection',         # 转场选择
+            6: 'transition_selection',         # 转场选择 ✅ (视觉流程)
+            7: 'filter_application',           # 滤镜应用 ✅ (视觉流程)
+            8: 'dynamic_effects',              # 动态特效添加 ✅ (视觉流程)
             9: 'bgm_composition',              # BGM合成查找
-            10: 'filter_application',          # 滤镜应用
-            11: 'dynamic_effects',             # 动态特效添加（汇聚点）
+            10: 'sfx_integration',             # 音效集成 ✅ (音频流程)
+            11: 'audio_processing',            # 音频处理 ✅ (音频汇聚点)
             12: 'aux_media_insertion',         # 额外媒体插入
             13: 'aux_text_insertion',          # 装饰文字插入
             14: 'subtitle_generation',         # 字幕生成
@@ -33,31 +33,33 @@ class VGPDAGExecutor:
         }
 
         # 依赖图：每个节点依赖哪些节点（必须等待这些节点完成）
+        # ✅ 已修正为正确的业务流程依赖关系
         self.dependencies = {
+            # === 主干流程 ===
             1: [],          # node1 无依赖
-            2: [1],         # node2 依赖 node1
-            3: [2],         # node3 依赖 node2
+            2: [1],         # node2 依赖 node1 (情感分析依赖类型识别)
+            3: [2],         # node3 依赖 node2 (分镜生成依赖情感分析)
 
-            # 从 node3 分出的多个分支
-            4: [3],         # node4 依赖 node3
-            5: [3],         # node5 依赖 node3（核心素材生成）
-            10: [3],        # node10 依赖 node3
-            12: [3],        # node12 依赖 node3
-            13: [3],        # node13 依赖 node3
-            14: [3],        # node14 依赖 node3
-            15: [3],        # node15 依赖 node3
+            # === 从 node3 分出的并行分支 ===
+            4: [3],         # node4 依赖 node3 (BGM锚点规划)
+            5: [3],         # node5 依赖 node3 (核心素材生成)
+            10: [3],        # node10 依赖 node3 (音效集成)
+            12: [3],        # node12 依赖 node3 (额外媒体插入)
+            13: [3],        # node13 依赖 node3 (装饰文字插入)
+            14: [3],        # node14 依赖 node3 (字幕生成)
+            15: [3],        # node15 依赖 node3 (片头片尾生成)
 
-            # 分支链条
-            9: [4],         # node9 依赖 node4
-            6: [5],         # node6 依赖 node5
-            7: [6],         # node7 依赖 node6
-            8: [7],         # node8 依赖 node7
+            # === 视觉处理链条（素材→转场→滤镜→特效）===
+            6: [5],         # node6 依赖 node5 (转场选择依赖素材)
+            7: [6],         # node7 依赖 node6 (滤镜应用依赖转场)
+            8: [7],         # node8 依赖 node7 (动态特效依赖滤镜)
 
-            # 汇聚到 node11
-            11: [9, 10, 14],  # node11 依赖 node9, node10, node14
+            # === 音频处理链条 ===
+            9: [4],         # node9 依赖 node4 (BGM合成依赖锚点规划)
+            11: [9, 10, 14],  # node11 音频处理汇聚点：依赖 BGM合成、音效集成、字幕生成
 
-            # 最终汇聚到 node16
-            16: [8, 11, 12, 13, 15]  # node16 依赖多个节点
+            # === 最终汇聚到时间线整合 ===
+            16: [8, 11, 12, 13, 15]  # node16 依赖：视觉特效、音频处理、额外媒体、装饰文字、片头片尾
         }
 
         # 执行状态跟踪
