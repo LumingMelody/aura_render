@@ -5,7 +5,7 @@ services:
       context: .
       target: production
     ports:
-      - "8000:8000"
+      - "30005:8000"
     environment:
       # Database and Cache
       - DATABASE_URL=sqlite:///./aura_render.db
