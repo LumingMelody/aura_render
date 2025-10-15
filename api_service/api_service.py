@@ -22,10 +22,6 @@ class APIConfig:
         """通用任务状态更新接口 - 所有任务都使用这个"""
         return f"{self.admin_api_base}/agent/task-video-info/update"
 
-    def update_task_video_edit_update(self):
-        """数字人视频编辑专用状态更新接口"""
-        return f"{self.admin_api_base}/agent/task-video-edit/update"
-
     def create_resource_url(self):
         """创建资源的接口"""
         return f"{self.admin_api_base}/agent/resource/create"
@@ -63,12 +59,8 @@ class APIService:
         """更新任务状态"""
         try:
             # 🔥 根据api_type选择不同的接口
-            if api_type == "digital_human":
-                url = self.config.update_task_video_edit_update()
-                print(f"🤖 [API-UPDATE] 使用数字人专用接口: {url}")
-            else:
-                url = self.config.update_task_status()
-                print(f"📝 [API-UPDATE] 使用通用接口: {url}")
+            url = self.config.update_task_status()
+            print(f"📝 [API-UPDATE] 使用通用接口: {url}")
 
             headers = self.config.get_headers(tenant_id)
 

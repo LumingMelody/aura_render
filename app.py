@@ -47,22 +47,22 @@ import httpx
 from config import settings, get_settings
 from database import get_db, init_db, TaskService, TaskStatus
 from materials_api import materials_router
-from ai_api import ai_router
+# from ai_api import ai_router  # ❌ 已删除 /ai/generate 接口
 from render_api import render_router
 
 # Import Celery task management
 from api.task_endpoints import router as task_router
 from task_queue.task_manager import get_task_manager
 
-# Import all new system APIs
-from api.image_endpoints import router as image_router
+# Import system management APIs (保留有用的系统管理接口)
+# from api.image_endpoints import router as image_router  # ❌ 已删除 /image/generate 接口
 from api.templates_endpoints import router as templates_router
 from api.analytics_endpoints import router as analytics_router
-from api.batch_endpoints import router as batch_router
+# from api.batch_endpoints import router as batch_router  # ❌ 已删除批量处理接口
 from api.auth_endpoints import router as auth_router
 from api.export_endpoints import router as export_router
 from api.websocket_endpoints import router as websocket_router
-from api.ai_optimization_endpoints import router as ai_optimization_router
+# from api.ai_optimization_endpoints import router as ai_optimization_router  # ❌ 已删除AI优化接口
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -136,17 +136,17 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Include API routers
 app.include_router(materials_router)
-app.include_router(ai_router)
+# app.include_router(ai_router)  # ❌ 已删除
 app.include_router(render_router)
 app.include_router(task_router)  # Add Celery task management endpoints
-app.include_router(image_router)  # Add image generation endpoints
+# app.include_router(image_router)  # ❌ 已删除 image generation endpoints
 app.include_router(templates_router)  # Add templates system endpoints
 app.include_router(analytics_router)  # Add analytics endpoints
-app.include_router(batch_router)  # Add batch processing endpoints
+# app.include_router(batch_router)  # ❌ 已删除 batch processing endpoints
 app.include_router(auth_router)  # Add authentication endpoints
 app.include_router(export_router)  # Add export and cloud storage endpoints
 app.include_router(websocket_router)  # Add WebSocket endpoints
-app.include_router(ai_optimization_router)  # Add AI optimization endpoints
+# app.include_router(ai_optimization_router)  # ❌ 已删除 AI optimization endpoints
 
 # ✨ 新增：VGP新工作流API
 try:

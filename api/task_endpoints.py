@@ -147,133 +147,15 @@ async def submit_async_video_generation(
             detail=f"任务提交失败: {str(e)}"
         )
 
-@router.get("/status/{task_id}", response_model=TaskStatusResponse)
-async def get_async_task_status(
-    task_id: str,
-    settings: Settings = Depends(get_settings)
-):
-    """获取异步任务状态"""
-    
-    try:
-        task_manager = get_task_manager(settings)
-        task_info = await task_manager.get_task_status(task_id)
-        
-        if not task_info:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Task {task_id} not found"
-            )
-        
-        return TaskStatusResponse(
-            task_id=task_info.task_id,
-            status=task_info.status.value,
-            priority=task_info.priority.name.lower(),
-            progress=task_info.progress,
-            message=task_info.message,
-            created_at=task_info.created_at,
-            updated_at=task_info.updated_at,
-            estimated_duration=task_info.estimated_duration,
-            actual_duration=task_info.actual_duration,
-            result=task_info.result,
-            error=task_info.error
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get task status for {task_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"获取任务状态失败: {str(e)}"
-        )
-
-@router.delete("/cancel/{task_id}")
-async def cancel_async_task(
-    task_id: str,
-    settings: Settings = Depends(get_settings)
-):
-    """取消异步任务"""
-    
-    try:
-        task_manager = get_task_manager(settings)
-        success = await task_manager.cancel_task(task_id)
-        
-        if not success:
-            raise HTTPException(
-                status_code=400,
-                detail=f"无法取消任务 {task_id}，可能任务不存在或已完成"
-            )
-        
-        return {
-            "message": f"任务 {task_id} 已取消",
-            "timestamp": datetime.utcnow()
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to cancel task {task_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"取消任务失败: {str(e)}"
-        )
-
-@router.get("/history", response_model=List[TaskStatusResponse])
-async def get_task_history(
-    limit: int = Query(50, description="返回任务数量限制", ge=1, le=200),
-    task_type: Optional[str] = Query(None, description="任务类型过滤"),
-    status: Optional[str] = Query(None, description="状态过滤"),
-    settings: Settings = Depends(get_settings)
-):
-    """获取任务历史记录"""
-    
-    try:
-        task_manager = get_task_manager(settings)
-        
-        # Convert status string to enum if provided
-        status_enum = None
-        if status:
-            try:
-                status_enum = TaskStatus(status.lower())
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid status: {status}"
-                )
-        
-        # Get task history
-        task_history = await task_manager.get_task_history(
-            limit=limit,
-            task_type=task_type,
-            status=status_enum
-        )
-        
-        # Convert to response models
-        return [
-            TaskStatusResponse(
-                task_id=task.task_id,
-                status=task.status.value,
-                priority=task.priority.name.lower(),
-                progress=task.progress,
-                message=task.message,
-                created_at=task.created_at,
-                updated_at=task.updated_at,
-                estimated_duration=task.estimated_duration,
-                actual_duration=task.actual_duration,
-                result=task.result,
-                error=task.error
-            )
-            for task in task_history
-        ]
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get task history: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"获取任务历史失败: {str(e)}"
-        )
+# =============================
+# ⚠️ 已删除的接口
+# =============================
+# 以下接口已被删除，统一使用外部 API 服务进行状态回调：
+# - /tasks/status/{task_id} - 获取任务状态（已删除）
+# - /tasks/cancel/{task_id} - 取消任务（已删除）
+# - /tasks/history - 获取任务历史（已删除）
+#
+# 现在所有任务状态更新通过 APIService 的 update_task_status 进行回调
 
 # =============================
 # Queue Management Endpoints

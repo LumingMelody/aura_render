@@ -41,6 +41,10 @@ class VGPGenerateRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="会话ID，用于关联多次请求")
     user_id: Optional[str] = Field(None, description="用户ID，用于用户行为分析")
 
+    # 任务状态回调字段（用于集成到外部系统）
+    tenant_id: Optional[str] = Field(None, description="租户ID，用于多租户系统")
+    id: Optional[str] = Field(None, description="业务ID，用于关联业务记录")
+
     @field_validator('template')
     @classmethod
     def validate_template(cls, v):
@@ -80,6 +84,7 @@ async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateReques
     from database.base import SessionLocal
     from pathlib import Path
     from vgp_dag_executor import VGPDAGExecutor
+    import time
 
     # 导入 app.py 中的函数和管理器
     import sys
@@ -92,9 +97,29 @@ async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateReques
         extract_node_outputs, generate_keyframes_from_shot_blocks, process_frame_reuse_logic
     )
 
+    # 初始化 API 服务（用于状态更新）
+    api_service = None
+    tenant_id = request.tenant_id
+    business_id = request.id
+    if tenant_id:
+        try:
+            from api_service.api_service import APIService
+            api_service = APIService()
+            print(f"✅ [VGP] API服务初始化成功 (tenant_id={tenant_id}, business_id={business_id})")
+        except Exception as e:
+            print(f"⚠️ [VGP] API服务初始化失败: {e}")
+
     db = SessionLocal()
     try:
-        # 更新任务状态为处理中
+        # 1️⃣ 任务开始 - 更新状态为运行中 (status="0")
+        if api_service and tenant_id:
+            try:
+                api_service.update_task_status(task_id, "0", tenant_id, business_id=business_id)
+                print(f"✅ [VGP] 任务状态更新为运行中: task_id={task_id}")
+            except Exception as status_error:
+                print(f"⚠️ [VGP] 更新运行状态时出错: {status_error}")
+
+        # 更新数据库任务状态为处理中
         TaskService.update_task_status(
             db, task_id, TaskStatus.PROCESSING,
             progress=0.0, message="开始VGP视频生成任务"
@@ -252,7 +277,38 @@ async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateReques
         serialized_results = serialize_results(results)
         serialized_results['vgp_document_path'] = vgp_file_path
 
-        # 任务完成
+        # 2️⃣ 任务完成 - 先创建资源，再更新状态为完成 (status="1")
+        if api_service and tenant_id:
+            try:
+                resource_id = None
+                # 第一步：如果有视频URL，先创建资源记录
+                if final_video_url:
+                    try:
+                        resource_result = api_service.create_resource(
+                            resource_type=1,  # 1=视频类型
+                            name=f"VGP视频-{request.theme_id}",
+                            path=final_video_url,
+                            local_full_path="",
+                            file_type="mp4",
+                            size=0,
+                            tenant_id=tenant_id
+                        )
+                        if resource_result:
+                            resource_id = resource_result.get('resource_id')
+                        print(f"✅ [VGP] 资源创建成功: {final_video_url}, resource_id={resource_id}")
+                    except Exception as resource_error:
+                        print(f"⚠️ [VGP] 创建资源记录时出错: {resource_error}")
+
+                # 第二步：更新任务状态为完成，传入 resource_id
+                api_service.update_task_status(task_id, "1", tenant_id,
+                                               business_id=business_id,
+                                               resource_id=resource_id)
+                print(f"✅ [VGP] 任务状态更新为完成: task_id={task_id}")
+
+            except Exception as status_error:
+                print(f"⚠️ [VGP] 更新完成状态时出错: {status_error}")
+
+        # 更新数据库任务状态为完成
         TaskService.update_task_status(
             db, task_id, TaskStatus.COMPLETED,
             progress=100.0,
@@ -264,6 +320,14 @@ async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateReques
         print(f"🎉 [VGP] Task {task_id} completed successfully!")
 
     except Exception as e:
+        # 3️⃣ 任务失败 - 更新状态为失败 (status="2")
+        if api_service and tenant_id:
+            try:
+                api_service.update_task_status(task_id, "2", tenant_id, business_id=business_id)
+                print(f"✅ [VGP] 任务状态更新为失败: task_id={task_id}")
+            except Exception as status_error:
+                print(f"⚠️ [VGP] 更新失败状态时出错: {status_error}")
+
         error_msg = f"VGP任务执行失败: {str(e)}"
         TaskService.update_task_status(
             db, task_id, TaskStatus.FAILED,
@@ -323,70 +387,6 @@ async def generate_video(
         raise HTTPException(status_code=500, detail=f"Failed to create VGP task: {str(e)}")
 
 
-@vgp_router.get("/status/{instance_id}", response_model=VGPStatusResponse)
-async def get_status(instance_id: str, db: Session = Depends(get_db)):
-    """获取VGP视频生成任务状态 - 从数据库查询（与 /task/{task_id}/status 逻辑相同）"""
-    try:
-        task = TaskService.get_task_by_id(db, instance_id)
-
-        if not task:
-            raise HTTPException(status_code=404, detail="任务不存在")
-
-        # 计算执行时间
-        execution_time = None
-        if task.started_at and task.completed_at:
-            execution_time = (task.completed_at - task.started_at).total_seconds()
-
-        return VGPStatusResponse(
-            instance_id=instance_id,
-            status=task.status.value,
-            progress=task.progress,
-            current_node=task.message,  # 当前节点信息存在message中
-            execution_time=execution_time or task.processing_time,
-            result=task.result,
-            error_message=task.error_message
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"查询状态失败: {str(e)}"
-        )
-
-
-@vgp_router.post("/cancel/{instance_id}")
-async def cancel_task(instance_id: str, db: Session = Depends(get_db)):
-    """取消视频生成任务 - 从数据库更新状态"""
-    try:
-        task = TaskService.get_task_by_id(db, instance_id)
-
-        if not task:
-            raise HTTPException(status_code=404, detail="任务不存在")
-
-        # 只能取消进行中的任务
-        if task.status == TaskStatus.PROCESSING:
-            TaskService.update_task_status(
-                db, instance_id, TaskStatus.FAILED,
-                error_message="用户取消任务"
-            )
-            return {"success": True, "message": "任务已取消"}
-        else:
-            return {
-                "success": False,
-                "message": f"任务状态为{task.status.value}，无法取消"
-            }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"取消任务失败: {str(e)}"
-        )
-
-
 @vgp_router.get("/templates")
 async def get_available_templates():
     """获取可用的工作流模板 - 返回静态配置"""
@@ -403,39 +403,6 @@ async def get_available_templates():
             "basic_video_generation": "基础视频生成（使用/generate接口）"
         }
     }
-
-
-@vgp_router.get("/active-tasks")
-async def get_active_tasks(db: Session = Depends(get_db)):
-    """获取所有活跃任务 - 从数据库查询"""
-    try:
-        # 查询所有进行中的任务
-        from database.models import Task
-        active_tasks = db.query(Task).filter(
-            Task.status == TaskStatus.PROCESSING
-        ).all()
-
-        tasks_info = [
-            {
-                "task_id": task.task_id,
-                "theme": task.theme,
-                "status": task.status.value,
-                "progress": task.progress,
-                "current_node": task.message,
-                "started_at": task.started_at.isoformat() if task.started_at else None
-            }
-            for task in active_tasks
-        ]
-
-        return {
-            "total": len(tasks_info),
-            "tasks": tasks_info
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"查询活跃任务失败: {str(e)}"
-        )
 
 
 @vgp_router.get("/system/health")
