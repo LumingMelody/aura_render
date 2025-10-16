@@ -29,7 +29,7 @@ services:
     volumes:
       - app_temp:/app/temp
       - app_output:/app/output
-      - app_logs:/app/logs
+      - ./logs:/app/logs  # 绑定挂载到项目目录
       - app_uploads:/app/uploads
     depends_on:
       - redis
@@ -83,7 +83,7 @@ services:
     volumes:
       - app_temp:/app/temp
       - app_output:/app/output
-      - app_logs:/app/logs
+      - ./logs:/app/logs  # 绑定挂载到项目目录
     depends_on:
       - redis
     restart: unless-stopped
@@ -104,7 +104,7 @@ services:
       - LOG_LEVEL=info
     volumes:
       - app_temp:/app/temp
-      - app_logs:/app/logs
+      - ./logs:/app/logs  # 绑定挂载到项目目录
     depends_on:
       - redis
     restart: unless-stopped
@@ -192,7 +192,6 @@ services:
 volumes:
   app_temp:
   app_output:
-  app_logs:
   app_uploads:
   redis_data:
   postgres_data:
