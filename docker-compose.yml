@@ -44,8 +44,9 @@ services:
   # Redis service for caching and message broker
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Port mapping removed - only accessible within Docker network
+    # ports:
+    #   - "6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
