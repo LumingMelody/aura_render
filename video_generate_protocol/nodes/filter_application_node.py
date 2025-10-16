@@ -363,7 +363,7 @@ class FilterApplicationNode(BaseNode):
             # 更新 prev_filter 用于下一帧
             prev_filter = filter_application
 
-            print(f"✅ 片段 {i} '{clip['clip_id']}' 处理完成 → 滤镜: {main_theme}")  # 👈 确认每帧都处理
+            print(f"✅ 片段 {i} '{clip.get('id', 'unknown')}' 处理完成 → 滤镜: {main_theme}")  # 👈 确认每帧都处理
 
         # ✅ Step 4: 输出连贯性评分（可选，用于调试）
         filter_chain = [clip["color_filter"]["preset"] for clip in result_sequence]
