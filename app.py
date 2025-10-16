@@ -86,8 +86,8 @@ setup_logging(
     log_dir=log_dir,
     log_level=logging.INFO if not settings.is_development else logging.DEBUG,
     enable_console=True,
-    enable_json=True,
-    enable_performance=True,
+    enable_json=False,  # 使用易读的文本格式
+    enable_performance=False,  # 简化日志，不单独记录性能
     max_file_size=100 * 1024 * 1024  # 100MB
 )
 

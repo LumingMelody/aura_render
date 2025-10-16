@@ -395,24 +395,24 @@ class LoggerManager:
             instance.handlers.append(console_handler)
             root_logger.addHandler(console_handler)
         
-        # Main log file (structured JSON)
-        if enable_json:
-            from logging.handlers import RotatingFileHandler
-            
-            main_handler = RotatingFileHandler(
-                log_dir / "aura_render.jsonl",
-                maxBytes=max_file_size,
-                backupCount=5,
-                encoding='utf-8'
-            )
-            main_handler.setLevel(LogLevel.TRACE.value)
-            main_handler.setFormatter(StructuredFormatter(include_performance=enable_performance))
-            instance.handlers.append(main_handler)
-            root_logger.addHandler(main_handler)
-        
-        # Error log file (errors and above)
+        # Main log file (human-readable text format)
         from logging.handlers import RotatingFileHandler
-        
+
+        main_handler = RotatingFileHandler(
+            log_dir / "aura_render.log",
+            maxBytes=max_file_size,
+            backupCount=5,
+            encoding='utf-8'
+        )
+        main_handler.setLevel(log_level)
+        main_handler.setFormatter(logging.Formatter(
+            '%(asctime)s | %(name)s | %(levelname)s | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        ))
+        instance.handlers.append(main_handler)
+        root_logger.addHandler(main_handler)
+
+        # Error log file (errors and above)
         error_handler = RotatingFileHandler(
             log_dir / "errors.log",
             maxBytes=max_file_size // 2,
@@ -421,39 +421,11 @@ class LoggerManager:
         )
         error_handler.setLevel(logging.ERROR)
         error_handler.setFormatter(logging.Formatter(
-            '%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s'
+            '%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
         ))
         instance.handlers.append(error_handler)
         root_logger.addHandler(error_handler)
-        
-        # Performance log file
-        if enable_performance:
-            perf_handler = RotatingFileHandler(
-                log_dir / "performance.log", 
-                maxBytes=max_file_size // 4,
-                backupCount=3,
-                encoding='utf-8'
-            )
-            perf_handler.setLevel(logging.INFO)
-            perf_handler.addFilter(lambda record: hasattr(record, 'metric_type') and record.metric_type == 'performance')
-            perf_handler.setFormatter(StructuredFormatter(include_performance=True))
-            instance.handlers.append(perf_handler)
-            root_logger.addHandler(perf_handler)
-        
-        # Category-specific log files
-        categories = [LogCategory.API, LogCategory.RENDERING, LogCategory.AI, LogCategory.SECURITY]
-        for category in categories:
-            category_handler = RotatingFileHandler(
-                log_dir / f"{category.value}.log",
-                maxBytes=max_file_size // 8,
-                backupCount=3,
-                encoding='utf-8'
-            )
-            category_handler.setLevel(logging.INFO)
-            category_handler.addFilter(lambda record, cat=category: getattr(record, 'category', None) == cat.value)
-            category_handler.setFormatter(ColoredConsoleFormatter(show_context=True))
-            instance.handlers.append(category_handler)
-            root_logger.addHandler(category_handler)
         
         cls._setup_done = True
     
