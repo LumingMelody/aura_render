@@ -4,6 +4,7 @@
 import asyncio
 import aiohttp
 import json
+import logging
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 import base64
@@ -14,6 +15,9 @@ import os
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from utils.oss_uploader import get_oss_uploader
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 class QwenVideoGenerator:
@@ -32,9 +36,9 @@ class QwenVideoGenerator:
         try:
             self.oss_uploader = get_oss_uploader()
             self.use_oss = True
-            print("✅ OSS上传器初始化成功，将使用OSS URL方式")
+            logger.info("✅ OSS上传器初始化成功，将使用OSS URL方式")
         except Exception as e:
-            print(f"⚠️ OSS上传器初始化失败，将使用base64方式: {e}")
+            logger.warning(f"⚠️ OSS上传器初始化失败，将使用base64方式: {e}")
             self.oss_uploader = None
             self.use_oss = False
 
@@ -62,16 +66,16 @@ class QwenVideoGenerator:
         if parsed.scheme in ('http', 'https'):
             # 已经是URL，直接使用
             img_url = start_image_path_or_url
-            print(f"✅ 使用万相图片URL: {img_url}")
+            logger.info(f"✅ 使用万相图片URL: {img_url}")
         else:
             # 本地路径，需要上传或编码
             if self.use_oss and self.oss_uploader:
                 try:
                     # 上传图片到OSS并获取公网URL
                     img_url = self.oss_uploader.upload_image(start_image_path_or_url)
-                    print(f"📤 图片已上传到OSS: {img_url}")
+                    logger.info(f"📤 图片已上传到OSS: {img_url}")
                 except Exception as e:
-                    print(f"⚠️ OSS上传失败，降级使用base64: {e}")
+                    logger.warning(f"⚠️ OSS上传失败，降级使用base64: {e}")
                     img_url = self._encode_image(start_image_path_or_url)
             else:
                 # 使用base64编码
@@ -81,7 +85,7 @@ class QwenVideoGenerator:
         if video_prompt:
             # 使用传入的refined_prompt（包含明确的动态运动描述）
             prompt = f"{video_prompt}，画面运动流畅自然"
-            print(f"📋 使用动态提示词: {video_prompt[:50]}...")
+            logger.info(f"📋 使用动态提示词: {video_prompt[:50]}...")
         else:
             # 默认通用提示词
             prompt = f"基于输入的图片生成一个自然流畅的视频，保持图片中的主要元素和风格，画面平滑过渡"
@@ -101,8 +105,8 @@ class QwenVideoGenerator:
         }
 
         # 发送请求
-        print(f"🚀 发送图生视频请求到: {self.endpoint}")
-        print(f"📦 请求体: model={request_body['model']}, img_url={img_url[:100]}...")
+        logger.info(f"🚀 发送图生视频请求到: {self.endpoint}")
+        logger.info(f"📦 请求体: model={request_body['model']}, img_url={img_url[:100]}...")
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -117,7 +121,7 @@ class QwenVideoGenerator:
                     # 通义万相异步API返回格式：{"output": {"task_id": "..."}, "request_id": "..."}
                     task_id = result.get("output", {}).get("task_id")
                     if task_id:
-                        print(f"✅ 任务创建成功, task_id: {task_id}")
+                        logger.info(f"✅ 任务创建成功, task_id: {task_id}")
                         return {
                             "success": True,
                             "task_id": task_id,
@@ -125,13 +129,13 @@ class QwenVideoGenerator:
                             "status": "processing"
                         }
                     else:
-                        print(f"❌ API响应中缺少task_id: {result}")
+                        logger.info(f"❌ API响应中缺少task_id: {result}")
                         return {
                             "success": False,
                             "error": f"API响应中缺少task_id: {result}"
                         }
                 else:
-                    print(f"❌ API请求失败 (status {response.status}): {response_text}")
+                    logger.info(f"❌ API请求失败 (status {response.status}): {response_text}")
                     return {
                         "success": False,
                         "error": f"API error {response.status}: {response_text}"
@@ -214,11 +218,11 @@ class QwenVideoGenerator:
                 }
             elif task_status in ["PENDING", "RUNNING"]:
                 # 任务仍在进行中，继续等待
-                print(f"⏳ 任务 {task_id[:8]}... 状态: {task_status}")
+                logger.info(f"⏳ 任务 {task_id[:8]}... 状态: {task_status}")
                 pass
             else:
                 # 未知状态,打印调试信息
-                print(f"⚠️ 未知任务状态: {task_status}, 完整响应: {status_response}")
+                logger.info(f"⚠️ 未知任务状态: {task_status}, 完整响应: {status_response}")
 
             # 等待后重试
             await asyncio.sleep(5)
@@ -266,14 +270,14 @@ class QwenVideoGenerator:
                         if task_id:
                             return task_id
                         else:
-                            print(f"❌ 图编辑API未返回task_id: {result}")
+                            logger.info(f"❌ 图编辑API未返回task_id: {result}")
                             return None
                     else:
                         error_text = await response.text()
-                        print(f"❌ 图编辑API错误 {response.status}: {error_text[:200]}")
+                        logger.info(f"❌ 图编辑API错误 {response.status}: {error_text[:200]}")
                         return None
         except Exception as e:
-            print(f"❌ 图编辑API异常: {e}")
+            logger.info(f"❌ 图编辑API异常: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -312,28 +316,28 @@ class StoryboardToVideoProcessor:
         results = []
         for i, (start_frame, end_frame) in enumerate(frame_pairs):
             try:
-                print(f"🎬 正在生成视频片段 {i+1}/{len(frame_pairs)}...")
+                logger.info(f"🎬 正在生成视频片段 {i+1}/{len(frame_pairs)}...")
                 result = await self._generate_clip(
                     start_frame,
                     end_frame,
                     output_dir / f"clip_{i:03d}.mp4"
                 )
                 results.append(result)
-                print(f"✅ 视频片段 {i+1} 生成成功")
-                print(f"   📹 视频URL: {result.get('url', 'N/A')}")
-                print(f"   ⏱️  时长: {result.get('duration', 0)}秒")
+                logger.info(f"✅ 视频片段 {i+1} 生成成功")
+                logger.info(f"   📹 视频URL: {result.get('url', 'N/A')}")
+                logger.info(f"   ⏱️  时长: {result.get('duration', 0)}秒")
 
                 # 添加延迟避免限流
                 if i < len(frame_pairs) - 1:
                     await asyncio.sleep(2)
             except Exception as e:
-                print(f"❌ 视频片段 {i} 生成失败: {e}")
+                logger.info(f"❌ 视频片段 {i} 生成失败: {e}")
                 results.append(e)
 
         # 处理结果
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                print(f"Clip {i} generation failed: {result}")
+                logger.info(f"Clip {i} generation failed: {result}")
             else:
                 video_clips.append(result)
 
@@ -445,60 +449,60 @@ class StoryboardToVideoProcessor:
         video_clips = []
         generated_images = []  # 存储已生成的图片，供后续参考
 
-        print(f"\n{'='*80}")
-        print(f"🎬 开始生成 {len(keyframes_with_strategy)} 个视频片段（含一致性保障）")
+        logger.info(f"\n{'='*80}")
+        logger.info(f"🎬 开始生成 {len(keyframes_with_strategy)} 个视频片段（含一致性保障）")
         if product_image_url:
-            print(f"📦 使用产品参考图: {product_image_url[:80]}...")
-        print(f"{'='*80}\n")
+            logger.info(f"📦 使用产品参考图: {product_image_url[:80]}...")
+        logger.info(f"{'='*80}\n")
 
         # 逐个处理关键帧
         for i, keyframe in enumerate(keyframes_with_strategy):
             try:
-                print(f"📸 正在处理关键帧 {i+1}/{len(keyframes_with_strategy)}...")
+                logger.info(f"📸 正在处理关键帧 {i+1}/{len(keyframes_with_strategy)}...")
 
                 strategy = keyframe.get("generation_strategy", "text_to_image")
                 reference_source = keyframe.get("reference_source", "none")
                 refined_prompt = keyframe.get("refined_prompt", "")
 
-                print(f"   策略: {strategy}")
-                print(f"   参考源: {reference_source}")
-                print(f"   提示词: {refined_prompt[:60]}...")
+                logger.info(f"   策略: {strategy}")
+                logger.info(f"   参考源: {reference_source}")
+                logger.info(f"   提示词: {refined_prompt[:60]}...")
 
                 # === 步骤1: 生成或获取关键帧图片 ===
                 current_image_url = None
 
                 if strategy == "image_to_image" and reference_source == "product_image" and product_image_url:
                     # ✅ 第一个镜头：直接使用产品原图，不进行图编辑（避免变形）
-                    print(f"   📦 使用产品原图（跳过图编辑，避免变形）...")
+                    logger.info(f"   📦 使用产品原图（跳过图编辑，避免变形）...")
                     current_image_url = product_image_url  # 直接使用产品图
                 elif strategy == "image_to_image" and reference_source == "previous_frame" and generated_images:
                     # 使用前一帧作为参考
                     reference_image_url = generated_images[-1]
                     if reference_image_url:
-                        print(f"   🔗 使用前一帧作为参考: {reference_image_url[:60] if reference_image_url else 'None'}...")
+                        logger.info(f"   🔗 使用前一帧作为参考: {reference_image_url[:60] if reference_image_url else 'None'}...")
                         current_image_url = await self._generate_image_from_image(
                             reference_image_url,
                             refined_prompt
                         )
                     else:
-                        print(f"   ⚠️ 前一帧为空，降级为文生图...")
+                        logger.info(f"   ⚠️ 前一帧为空，降级为文生图...")
                         current_image_url = await self._generate_image_from_text(refined_prompt)
                 else:
                     # 文生图生成当前关键帧
-                    print(f"   🎨 使用文生图生成关键帧...")
+                    logger.info(f"   🎨 使用文生图生成关键帧...")
                     current_image_url = await self._generate_image_from_text(refined_prompt)
 
                 # 检查是否成功生成
                 if not current_image_url:
-                    print(f"   ❌ 关键帧生成失败，跳过此帧")
+                    logger.info(f"   ❌ 关键帧生成失败，跳过此帧")
                     continue
 
                 # 保存生成的图片URL
                 generated_images.append(current_image_url)
-                print(f"   ✅ 关键帧生成成功: {current_image_url[:60]}...")
+                logger.info(f"   ✅ 关键帧生成成功: {current_image_url[:60]}...")
 
                 # === 步骤2: 使用关键帧生成视频 ===
-                print(f"   🎥 正在生成视频片段...")
+                logger.info(f"   🎥 正在生成视频片段...")
                 # 提取动态运动描述（前40个字），用于指导视频生成
                 motion_prompt = refined_prompt[:80] if refined_prompt else None
                 video_result = await self._generate_video_from_single_image(
@@ -508,22 +512,22 @@ class StoryboardToVideoProcessor:
                 )
 
                 video_clips.append(video_result)
-                print(f"   ✅ 视频片段 {i+1} 生成成功")
-                print(f"      URL: {video_result.get('url', 'N/A')[:60]}...")
+                logger.info(f"   ✅ 视频片段 {i+1} 生成成功")
+                logger.info(f"      URL: {video_result.get('url', 'N/A')[:60]}...")
 
                 # 添加延迟避免限流
                 if i < len(keyframes_with_strategy) - 1:
                     await asyncio.sleep(2)
 
             except Exception as e:
-                print(f"   ❌ 关键帧 {i+1} 处理失败: {e}")
+                logger.info(f"   ❌ 关键帧 {i+1} 处理失败: {e}")
                 import traceback
                 traceback.print_exc()
                 # 继续处理下一个
 
-        print(f"\n{'='*80}")
-        print(f"✅ 视频生成完成，共 {len(video_clips)} 个片段")
-        print(f"{'='*80}\n")
+        logger.info(f"\n{'='*80}")
+        logger.info(f"✅ 视频生成完成，共 {len(video_clips)} 个片段")
+        logger.info(f"{'='*80}\n")
 
         return video_clips
 
@@ -564,7 +568,7 @@ class StoryboardToVideoProcessor:
                         task_id = result.get("output", {}).get("task_id")
 
                         if task_id:
-                            print(f"      📋 文生图任务已提交, task_id: {task_id[:8]}...")
+                            logger.info(f"      📋 文生图任务已提交, task_id: {task_id[:8]}...")
                             # 等待图片生成完成
                             completion_result = await self.qwen.wait_for_completion(task_id)
 
@@ -582,23 +586,23 @@ class StoryboardToVideoProcessor:
                                         image_url = results[0].get("url")
 
                                 if not image_url:
-                                    print(f"      ⚠️ 文生图任务完成，但未找到图片URL")
-                                    print(f"      响应: {completion_result}")
+                                    logger.info(f"      ⚠️ 文生图任务完成，但未找到图片URL")
+                                    logger.info(f"      响应: {completion_result}")
                                     return None
 
                                 return image_url
                             else:
-                                print(f"      ❌ 文生图失败: {completion_result.get('error')}")
+                                logger.info(f"      ❌ 文生图失败: {completion_result.get('error')}")
                                 return None
                         else:
-                            print(f"      ❌ 文生图API未返回task_id: {result}")
+                            logger.info(f"      ❌ 文生图API未返回task_id: {result}")
                             return None
                     else:
                         error_text = await response.text()
-                        print(f"      ❌ 文生图API错误 {response.status}: {error_text[:200]}")
+                        logger.info(f"      ❌ 文生图API错误 {response.status}: {error_text[:200]}")
                         return None
         except Exception as e:
-            print(f"      ❌ 文生图异常: {e}")
+            logger.info(f"      ❌ 文生图异常: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -616,8 +620,8 @@ class StoryboardToVideoProcessor:
         返回:
             图片URL
         """
-        print(f"      🎨 使用图编辑API (wanx2.1-imageedit) 进行图生图...")
-        print(f"      📸 参考图: {reference_image_url[:80]}...")
+        logger.info(f"      🎨 使用图编辑API (wanx2.1-imageedit) 进行图生图...")
+        logger.info(f"      📸 参考图: {reference_image_url[:80]}...")
 
         try:
             # ✅ 添加保持产品外观的约束到prompt
@@ -631,39 +635,39 @@ class StoryboardToVideoProcessor:
             )
 
             if not task_id:
-                print(f"      ❌ 图编辑任务提交失败")
+                logger.info(f"      ❌ 图编辑任务提交失败")
                 # 降级为文生图
-                print(f"      ⚠️ 降级为文生图")
+                logger.info(f"      ⚠️ 降级为文生图")
                 return await self._generate_image_from_text(prompt)
 
-            print(f"      📋 图编辑任务已提交, task_id: {task_id[:12]}...")
+            logger.info(f"      📋 图编辑任务已提交, task_id: {task_id[:12]}...")
 
             # 等待任务完成
             result = await self.qwen.wait_for_completion(task_id, timeout=180)
 
             if not result.get("success"):
-                print(f"      ❌ 图编辑任务失败")
+                logger.info(f"      ❌ 图编辑任务失败")
                 # 降级为文生图
-                print(f"      ⚠️ 降级为文生图")
+                logger.info(f"      ⚠️ 降级为文生图")
                 return await self._generate_image_from_text(prompt)
 
             image_url = result.get("video_url")  # 图编辑返回的也是这个字段
 
             if not image_url:
-                print(f"      ⚠️ 图编辑任务完成，但未找到图片URL")
+                logger.info(f"      ⚠️ 图编辑任务完成，但未找到图片URL")
                 # 降级为文生图
-                print(f"      ⚠️ 降级为文生图")
+                logger.info(f"      ⚠️ 降级为文生图")
                 return await self._generate_image_from_text(prompt)
 
-            print(f"      ✅ 图编辑成功: {image_url[:80]}...")
+            logger.info(f"      ✅ 图编辑成功: {image_url[:80]}...")
             return image_url
 
         except Exception as e:
-            print(f"      ❌ 图生图异常: {e}")
+            logger.info(f"      ❌ 图生图异常: {e}")
             import traceback
             traceback.print_exc()
             # 降级为文生图
-            print(f"      ⚠️ 降级为文生图")
+            logger.info(f"      ⚠️ 降级为文生图")
             return await self._generate_image_from_text(prompt)
 
     async def _generate_video_from_single_image(self, image_url: str, duration_seconds: float = 5.0, video_prompt: str = None) -> Dict:
@@ -729,8 +733,8 @@ class StoryboardToVideoProcessor:
 
             # 提取所有视频URL(万相返回的URL可直接用于IMS)
             video_urls = [clip["url"] for clip in clip_data]
-            print(f"🎬 使用阿里云IMS合并 {len(video_urls)} 个视频片段...")
-            print(f"   视频URL示例: {video_urls[0][:80]}...")
+            logger.info(f"🎬 使用阿里云IMS合并 {len(video_urls)} 个视频片段...")
+            logger.info(f"   视频URL示例: {video_urls[0][:80]}...")
 
             # 初始化IMS客户端配置
             config = open_api_models.Config(
@@ -768,12 +772,12 @@ class StoryboardToVideoProcessor:
                 output_media_config=json.dumps(output_config, ensure_ascii=False)
             )
 
-            print(f"📋 Timeline配置: {json.dumps(timeline, indent=2, ensure_ascii=False)}")
+            logger.info(f"📋 Timeline配置: {json.dumps(timeline, indent=2, ensure_ascii=False)}")
             response = client.submit_media_producing_job(request)
 
             if response.status_code == 200:
                 job_id = response.body.job_id
-                print(f"✅ IMS合并任务已提交, JobId: {job_id}")
+                logger.info(f"✅ IMS合并任务已提交, JobId: {job_id}")
                 # 等待任务完成并获取最终视频URL
                 final_url = await self._wait_for_ims_job(client, job_id)
                 return {
@@ -785,7 +789,7 @@ class StoryboardToVideoProcessor:
                 raise Exception(f"IMS合并失败: status={response.status_code}")
 
         except Exception as e:
-            print(f"⚠️ IMS合并失败,降级使用本地ffmpeg: {e}")
+            logger.info(f"⚠️ IMS合并失败,降级使用本地ffmpeg: {e}")
             import traceback
             traceback.print_exc()
             # 降级方案: 使用ffmpeg本地合并
@@ -796,7 +800,7 @@ class StoryboardToVideoProcessor:
         import subprocess
         import tempfile
 
-        print("📥 开始下载视频片段到本地...")
+        logger.info(f"📥 开始下载视频片段到本地...")
         local_clips = []
         temp_dir = Path(tempfile.mkdtemp(prefix="video_clips_"))
 
@@ -806,7 +810,7 @@ class StoryboardToVideoProcessor:
                 video_url = clip.get("url")
                 local_path = temp_dir / f"clip_{i:03d}.mp4"
 
-                print(f"   下载片段 {i+1}/{len(clip_data)}: {video_url[:80]}...")
+                logger.info(f"   下载片段 {i+1}/{len(clip_data)}: {video_url[:80]}...")
                 await self._download_video(video_url, local_path)
                 local_clips.append(str(local_path))
 
@@ -817,7 +821,7 @@ class StoryboardToVideoProcessor:
                     f.write(f"file '{local_path}'\n")
 
             # 使用ffmpeg合并
-            print(f"🎬 使用ffmpeg合并 {len(local_clips)} 个视频片段...")
+            logger.info(f"🎬 使用ffmpeg合并 {len(local_clips)} 个视频片段...")
             cmd = [
                 "ffmpeg", "-f", "concat", "-safe", "0",
                 "-i", str(list_file), "-c", "copy", "-y", output_path
@@ -832,7 +836,7 @@ class StoryboardToVideoProcessor:
             if process.returncode != 0:
                 raise Exception(f"FFmpeg merge failed: {stderr.decode()}")
 
-            print(f"✅ ffmpeg合并完成: {output_path}")
+            logger.info(f"✅ ffmpeg合并完成: {output_path}")
             return {"success": True, "local_path": output_path}
 
         finally:
@@ -857,13 +861,13 @@ class StoryboardToVideoProcessor:
 
                 if status == "Success":
                     media_url = job.media_url
-                    print(f"✅ IMS合并完成")
-                    print(f"   🎬 最终视频URL: {media_url}")
+                    logger.info(f"✅ IMS合并完成")
+                    logger.info(f"   🎬 最终视频URL: {media_url}")
                     return media_url
                 elif status == "Failed":
                     raise Exception(f"IMS任务失败: {getattr(job, 'message', 'Unknown error')}")
                 else:
-                    print(f"⏳ IMS合并中... ({status})")
+                    logger.info(f"⏳ IMS合并中... ({status})")
                     await asyncio.sleep(5)
             else:
                 raise Exception(f"查询IMS任务状态失败: {response.status_code}")
@@ -911,7 +915,7 @@ async def demo():
         "/tmp/video_output"
     )
 
-    print(f"Generated {len(clips)} video clips")
+    logger.info(f"Generated {len(clips)} video clips")
 
     # 合并成最终视频
     final_video = await processor.merge_clips(
@@ -919,7 +923,7 @@ async def demo():
         "/tmp/video_output/final_video.mp4"
     )
 
-    print(f"Final video: {final_video}")
+    logger.info(f"Final video: {final_video}")
 
     return final_video
 
