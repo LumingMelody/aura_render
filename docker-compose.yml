@@ -16,6 +16,7 @@ services:
       # Application
       - ENV=production
       - LOG_LEVEL=info
+      - TZ=Asia/Shanghai
 
       # Alibaba Cloud APIs (⚠️ Set these in .env file or docker secrets)
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
@@ -47,6 +48,8 @@ services:
     # Port mapping removed - only accessible within Docker network
     # ports:
     #   - "6379:6379"
+    environment:
+      - TZ=Asia/Shanghai
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
@@ -72,6 +75,7 @@ services:
       # Application
       - ENV=production
       - LOG_LEVEL=info
+      - TZ=Asia/Shanghai
 
       # Alibaba Cloud APIs
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
@@ -102,6 +106,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - ENV=production
       - LOG_LEVEL=info
+      - TZ=Asia/Shanghai
     volumes:
       - app_temp:/app/temp
       - ./logs:/app/logs  # 绑定挂载到项目目录
@@ -122,6 +127,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - ENV=production
       - LOG_LEVEL=info
+      - TZ=Asia/Shanghai
     depends_on:
       - redis
     restart: unless-stopped
