@@ -106,6 +106,11 @@ def create_celery_app(settings: Optional[Settings] = None) -> Celery:
                 'schedule': 60.0,  # Every minute
                 'options': {'queue': 'monitoring'}
             },
+            'cleanup-logs': {
+                'task': 'task_queue.tasks.cleanup_logs_task',
+                'schedule': 86400.0,  # Every 24 hours (daily at 3 AM UTC)
+                'options': {'queue': 'maintenance'}
+            },
         },
     )
     

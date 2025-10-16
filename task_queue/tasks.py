@@ -509,3 +509,65 @@ def download_material_task(self, material_urls: List[str]) -> Dict[str, Any]:
     """Download and cache materials in background"""
     # Implementation for material downloading
     pass
+
+@app.task(bind=True)
+def cleanup_logs_task(self) -> Dict[str, Any]:
+    """
+    Periodic task to clean up and compress log files
+
+    Runs daily at 3 AM:
+    - Compresses logs older than 7 days
+    - Deletes compressed logs older than 30 days
+
+    Returns:
+        Cleanup statistics
+    """
+
+    start_time = time.time()
+    logger.info("开始日志清理任务")
+
+    try:
+        from pathlib import Path
+        from utils.log_manager import LogManager
+
+        # 获取日志目录
+        log_dir = Path(__file__).parent.parent / "logs"
+
+        if not log_dir.exists():
+            logger.warning(f"日志目录不存在: {log_dir}")
+            return {
+                'status': 'skipped',
+                'reason': 'log directory not found',
+                'timestamp': datetime.utcnow().isoformat()
+            }
+
+        # 执行日志清理
+        LogManager.cleanup_logs(
+            log_dir=log_dir,
+            compress_days=7,   # 压缩7天前的日志
+            delete_days=30     # 删除30天前的压缩日志
+        )
+
+        duration = time.time() - start_time
+
+        result = {
+            'status': 'completed',
+            'duration': duration,
+            'log_dir': str(log_dir),
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
+        logger.info(f"日志清理完成: {result}")
+        return result
+
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error(f"日志清理任务失败: {str(e)}")
+        logger.error(traceback.format_exc())
+
+        return {
+            'status': 'failed',
+            'error': str(e),
+            'duration': duration,
+            'timestamp': datetime.utcnow().isoformat()
+        }
