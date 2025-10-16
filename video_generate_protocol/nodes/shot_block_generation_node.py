@@ -1,6 +1,10 @@
 # nodes/shot_block_generation_node.py
 
 from video_generate_protocol import BaseNode
+import logging
+
+logger = logging.getLogger(__name__)
+
 from video_generate_protocol.prompt_manager import get_prompt_manager
 from typing import Dict, List, Any, Optional
 import json
@@ -181,11 +185,11 @@ def async_retry_shot_gen(max_attempts: int = 3, delay: float = 1.0, backoff: flo
                     last_exception = e
                     if attempt < max_attempts - 1:
                         wait_time = delay * (backoff ** attempt)
-                        print(f"⚠️ {func.__name__} 第{attempt + 1}次尝试失败: {e}")
-                        print(f"⏳ 等待 {wait_time:.1f}s 后重试...")
+                        logger.info(f"⚠️ {func.__name__} 第{attempt + 1}次尝试失败: {e}")
+                        logger.info(f"⏳ 等待 {wait_time:.1f}s 后重试...")
                         await asyncio.sleep(wait_time)
                     else:
-                        print(f"❌ {func.__name__} 经过{max_attempts}次尝试后最终失败")
+                        logger.info(f"❌ {func.__name__} 经过{max_attempts}次尝试后最终失败")
 
             raise last_exception
         return wrapper
@@ -274,13 +278,13 @@ class ShotBlockGenerationNode(BaseNode):
 
             # ✅ 修复：优先读取 target_duration_id，如果没有则尝试 target_duration
             total_duration = context.get("target_duration_id") or context.get("target_duration", 60)
-            print(f"🎯 [Node 3] 目标视频时长: {total_duration} 秒")
+            logger.info(f"🎯 [Node 3] 目标视频时长: {total_duration} 秒")
 
             # 检查缓存（包含目标时长）
             cached_result = self.cache.get(emotions, user_video_type, structure_template, total_duration)
             if cached_result:
                 self.stats["cache_hits"] += 1
-                print(f"✅ 缓存命中（时长: {total_duration}s），跳过LLM调用")
+                logger.info(f"✅ 缓存命中（时长: {total_duration}s），跳过LLM调用")
                 return {"shot_blocks_id": cached_result}
 
             # 生成分镜块
@@ -295,7 +299,7 @@ class ShotBlockGenerationNode(BaseNode):
             return {"shot_blocks_id": shot_blocks}
 
         except Exception as e:
-            print(f"❌ ShotBlockGenerationNode.generate 失败: {e}")
+            logger.info(f"❌ ShotBlockGenerationNode.generate 失败: {e}")
             # 使用fallback
             fallback_shots = self._fallback_shots("通用", 60, "冷静")
             self.stats["fallback_calls"] += 1
@@ -322,7 +326,7 @@ class ShotBlockGenerationNode(BaseNode):
             executor,
             lambda: self._map_to_supported_type(user_video_type, qwen)
         )
-        print(f"[类型映射] '{user_video_type}' → '{standard_video_type}'")
+        logger.info(f"[类型映射] '{user_video_type}' → '{standard_video_type}'")
 
         # ✅ 根据目标时长计算需要的镜头数量
         shots_needed = self._calculate_shots_needed(total_duration)
@@ -334,11 +338,11 @@ class ShotBlockGenerationNode(BaseNode):
         if shots_needed < num_segments:
             shots_per_segment = 0
             remaining_shots = shots_needed
-            print(f"📊 [Node 3] 共 {num_segments} 个段落，但只需要 {shots_needed} 个镜头，将为前 {shots_needed} 个段落各分配1个镜头")
+            logger.info(f"📊 [Node 3] 共 {num_segments} 个段落，但只需要 {shots_needed} 个镜头，将为前 {shots_needed} 个段落各分配1个镜头")
         else:
             shots_per_segment = shots_needed // num_segments
             remaining_shots = shots_needed % num_segments
-            print(f"📊 [Node 3] 共 {num_segments} 个段落，每个段落约 {shots_per_segment} 个镜头")
+            logger.info(f"📊 [Node 3] 共 {num_segments} 个段落，每个段落约 {shots_per_segment} 个镜头")
 
         shot_blocks = []
         current_time = 0.0
@@ -354,7 +358,7 @@ class ShotBlockGenerationNode(BaseNode):
 
             # 如果这个段落不需要镜头，跳过
             if segment_shots_count == 0:
-                print(f"⏭️  [Node 3] 跳过段落 {idx+1} ({seg_label})，不生成镜头")
+                logger.info(f"⏭️  [Node 3] 跳过段落 {idx+1} ({seg_label})，不生成镜头")
                 continue
 
             # 每个镜头约 5 秒
@@ -377,12 +381,12 @@ class ShotBlockGenerationNode(BaseNode):
 
         # ✅ 时长校验和调整：确保总时长符合 target_duration
         actual_duration = sum(shot["duration"] for shot in shot_blocks)
-        print(f"📊 [Node 3] 生成的分镜总时长: {actual_duration:.1f} 秒（目标: {total_duration} 秒）")
+        logger.info(f"📊 [Node 3] 生成的分镜总时长: {actual_duration:.1f} 秒（目标: {total_duration} 秒）")
 
         if actual_duration > total_duration:
             # 时长超出，需要按比例缩减
             scale_factor = total_duration / actual_duration
-            print(f"⚠️  [Node 3] 时长超出，将按比例缩减: {scale_factor:.2f}")
+            logger.info(f"⚠️  [Node 3] 时长超出，将按比例缩减: {scale_factor:.2f}")
 
             current_time = 0.0
             for shot in shot_blocks:
@@ -391,10 +395,10 @@ class ShotBlockGenerationNode(BaseNode):
                 shot["end_time"] = round(current_time + shot["duration"], 1)
                 current_time += shot["duration"]
 
-            print(f"✅ [Node 3] 调整后总时长: {sum(shot['duration'] for shot in shot_blocks):.1f} 秒")
+            logger.info(f"✅ [Node 3] 调整后总时长: {sum(shot['duration'] for shot in shot_blocks):.1f} 秒")
         elif actual_duration < total_duration * 0.8:
             # 时长过短（少于目标的80%），警告但不调整
-            print(f"⚠️  [Node 3] 生成的时长偏短（{actual_duration:.1f}s < {total_duration}s），建议检查生成逻辑")
+            logger.info(f"⚠️  [Node 3] 生成的时长偏短（{actual_duration:.1f}s < {total_duration}s），建议检查生成逻辑")
 
         return shot_blocks
 
@@ -422,12 +426,12 @@ class ShotBlockGenerationNode(BaseNode):
                 return self._parse_shots_from_json(shots_json, duration)
             except Exception as e:
                 self.stats["json_parse_failures"] += 1
-                print(f"[JSON解析失败] {e}，尝试修复...")
+                logger.info(f"[JSON解析失败] {e}，尝试修复...")
                 repaired_json = self._repair_json_heuristically(cleaned_response)
                 return self._parse_shots_from_json(repaired_json, duration)
 
         except Exception as e:
-            print(f"[段落分镜生成失败] {e}")
+            logger.info(f"[段落分镜生成失败] {e}")
             return self._fallback_shots(seg_label, duration, emotion)
 
     def _extract_json_from_response_enhanced(self, text: str) -> List[Dict]:
@@ -481,7 +485,7 @@ class ShotBlockGenerationNode(BaseNode):
         """
         import math
         shots_needed = math.ceil(total_duration / 5.0)
-        print(f"🎯 [Node 3] 目标时长 {total_duration}秒，需要生成 {shots_needed} 个镜头（每个约5秒）")
+        logger.info(f"🎯 [Node 3] 目标时长 {total_duration}秒，需要生成 {shots_needed} 个镜头（每个约5秒）")
         return shots_needed
 
     def _format_segment_name(self, key: str) -> str:
@@ -581,7 +585,7 @@ class ShotBlockGenerationNode(BaseNode):
                 predicted = response.strip().strip("“”\"'").strip()
                 return predicted if predicted in SUPPORTED_VIDEO_TYPES else "知识讲解"
         except Exception as e:
-            print(f"[警告] 类型映射失败，使用默认类型: {e}")
+            logger.info(f"[警告] 类型映射失败，使用默认类型: {e}")
             return "知识讲解"
 
     def _build_prompt(self, segment_name: str, segment_content: str,
@@ -736,7 +740,7 @@ class ShotBlockGenerationNode(BaseNode):
         """清空缓存"""
         self.cache.cache.clear()
         self.cache.timestamps.clear()
-        print("✅ 分镜块生成缓存已清空")
+        logger.info(f"✅ 分镜块生成缓存已清空")
 
     async def regenerate(self, context: Dict[str, Any], user_intent: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -792,17 +796,17 @@ if __name__ == "__main__":
     # 调用 generate
     result = node.generate(context)
 
-    print("🎬 分镜生成结果：\n")
+    logger.info(f"🎬 分镜生成结果：\n")
     for i, block in enumerate(result["shot_blocks_id"]):
-        print(f"镜头 {i+1}:")
-        print(f"  时长: {block['duration']}s [{block['start_time']} → {block['end_time']}]")
-        print(f"  镜头: {block['shot_type']} | 节奏: {block['pacing']}")
-        print(f"  画面: {block['visual_description']}")
-        print(f"  字幕: {block['caption']}")
-        print("-" * 60)
+        logger.info(f"镜头 {i+1}:")
+        logger.info(f"  时长: {block['duration']}s [{block['start_time']} → {block['end_time']}]")
+        logger.info(f"  镜头: {block['shot_type']} | 节奏: {block['pacing']}")
+        logger.info(f"  画面: {block['visual_description']}")
+        logger.info(f"  字幕: {block['caption']}")
+        logger.info(f"-" * 60)
 
     # 示例：用户干预
-    print("\n🔄 用户干预：全部改为‘特写’和‘快剪’\n")
+    logger.info(f"\n🔄 用户干预：全部改为‘特写’和‘快剪’\n")
     user_intent = {
         "shot_override": {
             "shot_type": "特写",
@@ -811,5 +815,5 @@ if __name__ == "__main__":
     }
     regenerated = node.regenerate(context, user_intent)
     for i, block in enumerate(regenerated["shot_blocks_id"]):
-        print(f"镜头 {i+1}: {block['shot_type']} | {block['pacing']} | {block['visual_description']}")
-        print("-" * 60)
+        logger.info(f"镜头 {i+1}: {block['shot_type']} | {block['pacing']} | {block['visual_description']}")
+        logger.info(f"-" * 60)

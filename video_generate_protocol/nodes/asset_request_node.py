@@ -20,6 +20,10 @@
 """
 
 from video_generate_protocol import BaseNode
+import logging
+
+logger = logging.getLogger(__name__)
+
 from typing import Dict, List, Any
 import requests
 import uuid
@@ -189,11 +193,11 @@ class AssetRequestNode(BaseNode):
         try:
             match_result = await match_intelligent_video(enhanced_context)
         except Exception as e:
-            print(f"❌ 调用 match_intelligent_video 失败: {str(e)}")
+            logger.info(f"❌ 调用 match_intelligent_video 失败: {str(e)}")
             match_result = {"success": False}
 
         if not match_result or not match_result.get("success"):
-            print("⚠️ 智能素材匹配失败，使用占位符序列")
+            logger.info(f"⚠️ 智能素材匹配失败，使用占位符序列")
             preliminary_sequence = self._create_placeholder_sequence(processed_shot_blocks)
         else:
             preliminary_sequence = match_result.get("data", {}).get("clips", [])
@@ -219,7 +223,7 @@ class AssetRequestNode(BaseNode):
             # available_oss_videos = 6
             # use_oss_videos = available_oss_videos > 0
             # if use_oss_videos:
-            #     print(f"✅ [Node 5] 使用 OSS 视频素材，共 {available_oss_videos} 个可用")
+            #     logger.info(f"✅ [Node 5] 使用 OSS 视频素材，共 {available_oss_videos} 个可用")
             #     current_time = 0.0
             #     for idx in range(videos_needed):
             #         video_idx = (idx % available_oss_videos) + 1
@@ -233,9 +237,9 @@ class AssetRequestNode(BaseNode):
             # 使用所有生成的镜头，不要截断（每个镜头生成一段5秒视频）
             selected_shot_blocks = processed_shot_blocks
 
-            print(f"🎯 [Node 5] 目标时长 {target_duration}秒")
-            print(f"🎨 [Node 5] 使用所有 {len(selected_shot_blocks)} 个镜头生成视频（含一致性保障）")
-            print(f"📊 [Node 5] 预计生成 {len(selected_shot_blocks)} 段视频，总时长约 {len(selected_shot_blocks) * 5}秒")
+            logger.info(f"🎯 [Node 5] 目标时长 {target_duration}秒")
+            logger.info(f"🎨 [Node 5] 使用所有 {len(selected_shot_blocks)} 个镜头生成视频（含一致性保障）")
+            logger.info(f"📊 [Node 5] 预计生成 {len(selected_shot_blocks)} 段视频，总时长约 {len(selected_shot_blocks) * 5}秒")
 
             # === 步骤1: Node 4A - 提取全局视觉基因 ===
             from video_generate_protocol.nodes.visual_dna_node import VisualDNANode
@@ -278,7 +282,7 @@ class AssetRequestNode(BaseNode):
                 product_images = reference_media.get("product_images", [])
                 if product_images and len(product_images) > 0:
                     product_image_url = product_images[0].get("url")
-                    print(f"📦 [Node 5] 检测到产品参考图: {product_image_url}")
+                    logger.info(f"📦 [Node 5] 检测到产品参考图: {product_image_url}")
 
             # === 步骤5: 使用万相图生视频（支持图生图） ===
             from video_generate_protocol.nodes.qwen_integration import StoryboardToVideoProcessor
@@ -289,28 +293,28 @@ class AssetRequestNode(BaseNode):
 
             video_processor = StoryboardToVideoProcessor(qwen_key)
 
-            print(f"🎥 [Node 5] Generating {len(keyframes_with_strategy)} video clips with consistency...")
+            logger.info(f"🎥 [Node 5] Generating {len(keyframes_with_strategy)} video clips with consistency...")
             video_clips = await video_processor.process_keyframes_with_consistency(
                 keyframes_with_strategy,
                 f"/tmp/video_clips_node5_{uuid.uuid4().hex[:8]}",
                 product_image_url=product_image_url  # 传递产品图片
             )
-            print(f"✅ [Node 5] Generated {len(video_clips)} video clips from {len(selected_shot_blocks)} shots (target duration: {target_duration}s)")
+            logger.info(f"✅ [Node 5] Generated {len(video_clips)} video clips from {len(selected_shot_blocks)} shots (target duration: {target_duration}s)")
 
             # 保存关键帧信息（供调试）
             keyframes = keyframes_with_strategy
 
             # 打印所有视频片段URL汇总
             if video_clips:
-                print(f"\n{'='*80}")
-                print(f"📹 生成的视频片段URL汇总 (共{len(video_clips)}个):")
-                print(f"{'='*80}")
+                logger.info(f"\n{'='*80}")
+                logger.info(f"📹 生成的视频片段URL汇总 (共{len(video_clips)}个):")
+                logger.info(f"{'='*80}")
                 for idx, clip in enumerate(video_clips, 1):
-                    print(f"{idx}. {clip.get('url', 'N/A')}")
-                print(f"{'='*80}\n")
+                    logger.info(f"{idx}. {clip.get('url', 'N/A')}")
+                logger.info(f"{'='*80}\n")
 
         except Exception as e:
-            print(f"❌ [Node 5] Video generation failed: {e}")
+            logger.info(f"❌ [Node 5] Video generation failed: {e}")
             import traceback
             traceback.print_exc()
             # 视频生成失败时，继续返回匹配结果，但标记失败
@@ -369,5 +373,5 @@ class AssetRequestNode(BaseNode):
 
     # regenerate 可后续改为 async，或仅用于调试
     def regenerate(self, context: Dict[str, Any], user_intent: Dict[str, Any]) -> Dict[str, Any]:
-        print("⚠️ regenerate 暂不支持异步流程，建议在上层统一使用 async generate")
+        logger.info(f"⚠️ regenerate 暂不支持异步流程，建议在上层统一使用 async generate")
         return self._create_placeholder_sequence(context.get("shot_blocks_id", []))

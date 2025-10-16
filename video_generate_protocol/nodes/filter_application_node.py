@@ -1,6 +1,10 @@
 # nodes/filter_application_node.py
 
 from video_generate_protocol import BaseNode
+import logging
+
+logger = logging.getLogger(__name__)
+
 from typing import Dict, List, Any
 import os
 import json
@@ -215,7 +219,7 @@ class FilterApplicationNode(BaseNode):
             qwen = QwenLLM()
         except ImportError:
             qwen = None
-            print("Warning: QwenLLM not available, falling back to rule-based.")
+            logger.info(f"Warning: QwenLLM not available, falling back to rule-based.")
 
         if not sequence:
             return {"filter_sequence_id": []}
@@ -256,9 +260,9 @@ class FilterApplicationNode(BaseNode):
                 main_theme = response.strip().lower()
                 if main_theme not in FILTER_PRESETS:
                     main_theme = "natural"
-                print(f"[全局分析] 主基调: {main_theme}")
+                logger.info(f"[全局分析] 主基调: {main_theme}")
             except Exception as e:
-                print(f"Qwen 主基调分析失败: {e}")
+                logger.info(f"Qwen 主基调分析失败: {e}")
                 main_theme = "natural"
         else:
             main_theme = style_config.get("filter_preset", "natural")
@@ -313,7 +317,7 @@ class FilterApplicationNode(BaseNode):
                     ("cinematic", "vibrant")  # 视情况可调
                 }
                 if (prev_filter["preset"], recommended_filter) in conflicting_pairs:
-                    print(f"检测到风格冲突: {prev_filter['preset']} → {recommended_filter}，平滑处理...")
+                    logger.info(f"检测到风格冲突: {prev_filter['preset']} → {recommended_filter}，平滑处理...")
                     # 平滑策略：保留主基调，或降低强度
                     recommended_filter = main_theme
                     intensity = intensity * 0.7  # 降低强度以缓冲
@@ -363,13 +367,13 @@ class FilterApplicationNode(BaseNode):
             # 更新 prev_filter 用于下一帧
             prev_filter = filter_application
 
-            print(f"✅ 片段 {i} '{clip.get('id', 'unknown')}' 处理完成 → 滤镜: {main_theme}")  # 👈 确认每帧都处理
+            logger.info(f"✅ 片段 {i} '{clip.get('id', 'unknown')}' 处理完成 → 滤镜: {main_theme}")  # 👈 确认每帧都处理
 
         # ✅ Step 4: 输出连贯性评分（可选，用于调试）
         filter_chain = [clip["color_filter"]["preset"] for clip in result_sequence]
         diversity = len(set(filter_chain))
         consistency_score = round(1.0 - (diversity / len(filter_chain)) * 0.5, 2)  # 简单评分
-        print(f"[连贯性分析] 滤镜链: {filter_chain} | 风格多样性: {diversity} | 一致性评分: {consistency_score}")
+        logger.info(f"[连贯性分析] 滤镜链: {filter_chain} | 风格多样性: {diversity} | 一致性评分: {consistency_score}")
         print(json.dumps(result_sequence,indent=2, ensure_ascii=False))
         return {
             "filter_sequence_id": result_sequence,
@@ -504,12 +508,12 @@ if __name__ == "__main__":
     # ]
 
     # 调用 generate
-    print("=== Generate ===")
+    logger.info(f"=== Generate ===")
     result = node.generate(context=INPUT_DATA)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
     # 用户干预：更换某个镜头
-    # print("\n=== Regenerate: 更换夕阳镜头为赛博朋克 ===")
+    # logger.info(f"\n=== Regenerate: 更换夕阳镜头为赛博朋克 ===")
     # intent = {
     #     "filter_override": {
     #         "per_clip": [

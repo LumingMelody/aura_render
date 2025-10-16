@@ -1,6 +1,10 @@
 # nodes/timeline_integration_node.py
 
 from video_generate_protocol import BaseNode
+import logging
+
+logger = logging.getLogger(__name__)
+
 from typing import Dict, List, Any
 import uuid
 from datetime import datetime
@@ -83,8 +87,8 @@ class TimelineIntegrationNode(BaseNode):
         intro_outro_seq = context.get("intro_outro_sequence")
 
         # ===  执行最终视频合成 ===
-        print(f"🎬 [Node 16] Starting final video composition...")
-        print(f"📊 [Node 16] Received {len(video_clips)} video clips from Node 5")
+        logger.info(f"🎬 [Node 16] Starting final video composition...")
+        logger.info(f"📊 [Node 16] Received {len(video_clips)} video clips from Node 5")
 
         final_video_url = None
         final_video_path = None
@@ -99,8 +103,8 @@ class TimelineIntegrationNode(BaseNode):
                 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
                 # ✅ 使用阿里云IMS API合并视频（统一处理OSS和万相生成的视频）
-                print(f"🎬 [Node 16] 使用阿里云IMS API合并视频...")
-                print(f"📊 [Node 16] 待合并视频数量: {len(video_clips)}")
+                logger.info(f"🎬 [Node 16] 使用阿里云IMS API合并视频...")
+                logger.info(f"📊 [Node 16] 待合并视频数量: {len(video_clips)}")
 
                 from video_generate_protocol.nodes.qwen_integration import StoryboardToVideoProcessor
 
@@ -113,7 +117,7 @@ class TimelineIntegrationNode(BaseNode):
 
                 # 执行视频合并
                 final_video_path_temp = f"/tmp/final_video_{uuid.uuid4().hex[:8]}.mp4"
-                print(f"🔗 [Node 16] Merging {len(video_clips)} clips into final video...")
+                logger.info(f"🔗 [Node 16] Merging {len(video_clips)} clips into final video...")
 
                 merge_result = await video_processor.merge_clips(video_clips, final_video_path_temp)
 
@@ -123,22 +127,22 @@ class TimelineIntegrationNode(BaseNode):
                     merge_success = True
 
                     # 醒目的最终视频URL打印
-                    print(f"\n{'='*80}")
-                    print(f"✅ [Node 16] 最终视频合成成功！")
-                    print(f"{'='*80}")
-                    print(f"🎬 最终视频URL: {final_video_url}")
+                    logger.info(f"\n{'='*80}")
+                    logger.info(f"✅ [Node 16] 最终视频合成成功！")
+                    logger.info(f"{'='*80}")
+                    logger.info(f"🎬 最终视频URL: {final_video_url}")
                     if final_video_path:
-                        print(f"📁 本地路径: {final_video_path}")
-                    print(f"{'='*80}\n")
+                        logger.info(f"📁 本地路径: {final_video_path}")
+                    logger.info(f"{'='*80}\n")
                 else:
-                    print(f"❌ [Node 16] Video merge failed")
+                    logger.info(f"❌ [Node 16] Video merge failed")
 
             except Exception as e:
-                print(f"❌ [Node 16] Final video composition failed: {e}")
+                logger.info(f"❌ [Node 16] Final video composition failed: {e}")
                 import traceback
                 traceback.print_exc()
         else:
-            print(f"⚠️ [Node 16] No video clips to merge")
+            logger.info(f"⚠️ [Node 16] No video clips to merge")
 
         # 构建统一时间线
         timeline = {
@@ -187,7 +191,7 @@ class TimelineIntegrationNode(BaseNode):
             elif "duration" in clip:
                 duration = clip["duration"]
             else:
-                print(f"⚠️ [Node 16] Clip missing duration info: {clip}")
+                logger.info(f"⚠️ [Node 16] Clip missing duration info: {clip}")
                 duration = 5.0  # 默认5秒
 
             video_clip = self._create_timeline_clip(
