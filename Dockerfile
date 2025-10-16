@@ -101,8 +101,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Copy application code (excluding dev files)
-COPY --exclude=tests --exclude=*.md --exclude=.git . .
+# Copy application code (excluding dev files via .dockerignore)
+COPY . .
 
 # Install only production Python dependencies
 RUN pip install --no-cache-dir gunicorn uvicorn[standard]
