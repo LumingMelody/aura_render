@@ -65,10 +65,20 @@ from api.websocket_endpoints import router as websocket_router
 # from api.ai_optimization_endpoints import router as ai_optimization_router  # ❌ 已删除AI优化接口
 
 # =============================
-# 日志系统初始化
+# 日志系统初始化（必须在其他导入之前配置）
 # =============================
 from utils.logger import setup_logging, get_logger, LogCategory
 from pathlib import Path
+
+# ⚠️ 重要：先配置第三方库日志级别，再初始化日志系统
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)  # 只记录警告和错误
+logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.dialects").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.orm").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)  # 减少访问日志
 
 # 配置日志系统
 log_dir = Path(__file__).parent / "logs"
@@ -80,16 +90,6 @@ setup_logging(
     enable_performance=True,
     max_file_size=100 * 1024 * 1024  # 100MB
 )
-
-# 配置第三方库日志级别（减少冗余日志）
-logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)  # 只记录警告和错误
-logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
-logging.getLogger("sqlalchemy.dialects").setLevel(logging.WARNING)
-logging.getLogger("sqlalchemy.orm").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("uvicorn.access").setLevel(logging.WARNING)  # 减少访问日志
 
 # 使用增强的日志系统
 logger = get_logger("aura_render.app").with_context(category=LogCategory.SYSTEM)
