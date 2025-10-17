@@ -83,7 +83,7 @@ class TimelineIntegrationNode(BaseNode):
         # ✨ 从 Node 5 (asset_request) 的输出中获取视频片段
         video_clips = context.get("video_clips", [])
         audio_tracks = context.get("audio_tracks", [])
-        subtitle_seq = context.get("subtitle_sequence")
+        subtitle_seq = context.get("subtitle_sequence_id")  # ✨ 修正：Node 14输出的字段名是 subtitle_sequence_id
         intro_outro_seq = context.get("intro_outro_sequence")
 
         # ===  执行最终视频合成 ===
