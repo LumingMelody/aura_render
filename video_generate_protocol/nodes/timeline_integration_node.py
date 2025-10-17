@@ -119,7 +119,12 @@ class TimelineIntegrationNode(BaseNode):
                 final_video_path_temp = f"/tmp/final_video_{uuid.uuid4().hex[:8]}.mp4"
                 logger.info(f"🔗 [Node 16] Merging {len(video_clips)} clips into final video...")
 
-                merge_result = await video_processor.merge_clips(video_clips, final_video_path_temp)
+                # 传递字幕序列到merge_clips
+                merge_result = await video_processor.merge_clips(
+                    video_clips,
+                    final_video_path_temp,
+                    subtitle_sequence=subtitle_seq  # ✨ 传递字幕序列
+                )
 
                 if merge_result.get("success"):
                     final_video_url = merge_result.get("video_url")

@@ -715,13 +715,79 @@ class StoryboardToVideoProcessor:
                 else:
                     raise Exception(f"Failed to download video: {response.status}")
 
-    async def merge_clips(self, clip_data: List[Dict], output_path: str) -> Dict:
+    def _convert_subtitle_to_ims_format(
+        self,
+        subtitle_sequence: Dict,
+        video_start_time: float = 0.0
+    ) -> List[Dict]:
+        """
+        将subtitle_sequence转换为阿里云IMS的SubtitleTrackClips格式
+
+        参数:
+            subtitle_sequence: Node 14生成的字幕数据
+            video_start_time: 视频开始时间（用于对齐片头）
+
+        返回:
+            IMS SubtitleTrackClips数组
+        """
+        if not subtitle_sequence or "clips" not in subtitle_sequence:
+            return []
+
+        clips = subtitle_sequence.get("clips", [])
+        style_config = subtitle_sequence.get("style_config", {})
+
+        # 提取样式配置
+        font_color = style_config.get("color", "#FFFFFF")
+        stroke_color = style_config.get("stroke", "#000000")
+        font_size = style_config.get("font_size", 40)
+
+        ims_subtitles = []
+
+        for clip in clips:
+            # 字幕文本
+            text = clip.get("text", "")
+            if not text:
+                continue
+
+            # 时间对齐（加上视频开始时间）
+            timeline_in = video_start_time + clip.get("start", 0.0)
+            timeline_out = video_start_time + clip.get("end", clip.get("start", 0.0) + clip.get("duration", 0.0))
+
+            # 位置信息
+            position = clip.get("position", {})
+            y_pos = position.get("y", 1000)  # 默认底部
+
+            # 构建IMS字幕格式
+            ims_clip = {
+                "Type": "Text",
+                "Content": text.replace("\n", "\\N"),  # IMS使用\\N作为换行符
+                "X": 0,
+                "Y": y_pos,
+                "Font": "AlibabaPuHuiTi",  # 阿里云内置字体
+                "FontSize": font_size,
+                "FontColor": font_color,
+                "Outline": 2,  # 描边宽度
+                "OutlineColour": stroke_color,
+                "Alignment": "TopCenter",
+                "TimelineIn": round(timeline_in, 2),
+                "TimelineOut": round(timeline_out, 2),
+                "FontFace": {
+                    "Bold": True
+                }
+            }
+
+            ims_subtitles.append(ims_clip)
+
+        return ims_subtitles
+
+    async def merge_clips(self, clip_data: List[Dict], output_path: str, subtitle_sequence: Dict = None) -> Dict:
         """
         合并视频片段 - 使用阿里云IMS API
 
         参数:
             clip_data: 视频片段数据列表,每项包含 {"url": ..., "duration": ...}
             output_path: 输出路径(仅用于命名)
+            subtitle_sequence: 字幕序列（可选），从Node 14生成
 
         返回:
             包含合并后视频URL的字典
@@ -758,6 +824,24 @@ class StoryboardToVideoProcessor:
                     ]
                 }]
             }
+
+            # 添加字幕轨道
+            if subtitle_sequence:
+                logger.info(f"📝 添加字幕轨道...")
+                subtitle_clips = self._convert_subtitle_to_ims_format(
+                    subtitle_sequence,
+                    video_start_time=0.0  # 如果有片头，需要传入片头时长
+                )
+
+                if subtitle_clips:
+                    timeline["SubtitleTracks"] = [{
+                        "SubtitleTrackClips": subtitle_clips
+                    }]
+                    logger.info(f"   ✅ 已添加 {len(subtitle_clips)} 个字幕片段")
+                else:
+                    logger.info(f"   ⚠️ 字幕序列为空，跳过字幕轨道")
+            else:
+                logger.info(f"   ℹ️ 未提供字幕序列，跳过字幕轨道")
 
             # 输出配置
             output_config = {
