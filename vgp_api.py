@@ -142,6 +142,39 @@ async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateReques
 
         logger.info(f"🎯 [VGP] Processing request: {request.theme_id} - {request.target_duration_id}s")
 
+        # ✨ 新增：如果没有产品图片，调用 Coze 搜索图片
+        has_product_images = False
+        if request.reference_media and request.reference_media.product_images:
+            has_product_images = len(request.reference_media.product_images) > 0
+
+        # 调试日志
+        logger.info(f"🔍 [VGP] 检查产品图片: reference_media={request.reference_media is not None}, has_product_images={has_product_images}")
+
+        if not has_product_images:
+            logger.info("🔍 [VGP] 未检测到产品图片，开始从 Coze 搜索图片...")
+
+            try:
+                from core.cliptemplate.coze.image_search import search_reference_image_from_coze
+
+                # 使用 user_description 作为搜索查询
+                image_url = await search_reference_image_from_coze(request.user_description_id)
+
+                if image_url:
+                    logger.info(f"✅ [VGP] Coze 搜索到图片: {image_url}")
+
+                    # 添加到 context，格式为 {"product_images": [{"url": "..."}]}
+                    context["reference_media"] = {
+                        "product_images": [{"url": image_url}]
+                    }
+
+                    logger.info(f"🎯 [VGP] 已添加 Coze 搜索图片到 reference_media")
+                else:
+                    logger.warning("⚠️ [VGP] Coze 未搜索到图片")
+
+            except Exception as e:
+                logger.error(f"❌ [VGP] Coze 图片搜索失败: {e}")
+                # 继续流程，不阻断
+
         # 创建VGP文档
         vgp_document = node_manager.vgp_protocol.create_document({
             'task_id': task_id,

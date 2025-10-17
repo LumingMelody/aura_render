@@ -50,6 +50,7 @@ torchvision>=0.15.0
 transformers>=4.37.0
 diffusers==0.24.0
 dashscope==1.14.1  # Alibaba Cloud Qwen/Tongyi API SDK
+cozepy>=0.3.0  # Coze API SDK for image search
 json5==0.9.14  # JSON5 parser for flexible JSON parsing
 
 # Video Understanding Models

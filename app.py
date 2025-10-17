@@ -161,18 +161,18 @@ if settings.is_development:
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Include API routers
-app.include_router(materials_router)
+# Include API routers - 只保留核心必要功能
+# app.include_router(materials_router)  # ❌ 已删除 - 非核心功能
 # app.include_router(ai_router)  # ❌ 已删除
-app.include_router(render_router)
-app.include_router(task_router)  # Add Celery task management endpoints
+# app.include_router(render_router)  # ❌ 已删除 - 非核心功能
+app.include_router(task_router)  # ✅ 保留 - Celery 任务管理（核心）
 # app.include_router(image_router)  # ❌ 已删除 image generation endpoints
-app.include_router(templates_router)  # Add templates system endpoints
-app.include_router(analytics_router)  # Add analytics endpoints
+# app.include_router(templates_router)  # ❌ 已删除 - 非核心功能
+# app.include_router(analytics_router)  # ❌ 已删除 - 非核心功能
 # app.include_router(batch_router)  # ❌ 已删除 batch processing endpoints
-app.include_router(auth_router)  # Add authentication endpoints
-app.include_router(export_router)  # Add export and cloud storage endpoints
-app.include_router(websocket_router)  # Add WebSocket endpoints
+# app.include_router(auth_router)  # ❌ 已删除 - 非核心功能（如需权限控制可启用）
+# app.include_router(export_router)  # ❌ 已删除 - 非核心功能
+app.include_router(websocket_router)  # ✅ 保留 - WebSocket 实时通信（核心）
 # app.include_router(ai_optimization_router)  # ❌ 已删除 AI optimization endpoints
 
 # ✨ 新增：VGP新工作流API
@@ -622,53 +622,8 @@ async def health_check():
     )
 
 
-@app.get("/nodes")
-async def list_nodes():
-    """List available processing nodes"""
-    nodes = node_manager.get_available_nodes()
-    return {
-        "nodes": nodes,
-        "count": len(nodes),
-        "timestamp": datetime.now()
-    }
-
-
-@app.post("/generate", response_model=TaskResponse)
-async def generate_video(
-    request: VideoGenerationRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    settings: Any = Depends(get_settings)
-):
-    """Generate video from user input"""
-    try:
-        # Create task in database
-        task = TaskService.create_task(
-            db=db,
-            theme=request.theme_id,
-            keywords=request.keywords_id,
-            target_duration=request.target_duration_id,
-            user_description=request.user_description_id
-        )
-        
-        logger.info(f"🚀 Starting video generation task: {task.task_id}")
-        
-        # Add background task for processing
-        background_tasks.add_task(
-            process_video_generation,
-            task_id=task.task_id,
-            request=request
-        )
-        
-        return TaskResponse(
-            task_id=task.task_id,
-            status="started",
-            message="视频生成任务已启动",
-            timestamp=datetime.now()
-        )
-    except Exception as e:
-        logger.error(f"❌ Failed to create task: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create task")
+# ❌ 已删除 /nodes 接口 - 调试接口，不需要暴露
+# ❌ 已删除 /generate 接口 - 使用 /vgp/generate 代替
 
 
 @app.get("/task/{task_id}/status")
@@ -705,37 +660,7 @@ async def list_tasks(
         raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
 
 
-@app.get("/database/stats")
-async def get_database_stats(db: Session = Depends(get_db)):
-    """Get database statistics"""
-    from database.base import get_db_stats
-    from database.models import Task, Project
-    
-    try:
-        total_tasks = db.query(Task).count()
-        total_projects = db.query(Project).count()
-        
-        pending_tasks = db.query(Task).filter(Task.status == TaskStatus.PENDING).count()
-        processing_tasks = db.query(Task).filter(Task.status == TaskStatus.PROCESSING).count()
-        completed_tasks = db.query(Task).filter(Task.status == TaskStatus.COMPLETED).count()
-        failed_tasks = db.query(Task).filter(Task.status == TaskStatus.FAILED).count()
-        
-        return {
-            "database": get_db_stats(),
-            "tasks": {
-                "total": total_tasks,
-                "pending": pending_tasks,
-                "processing": processing_tasks,
-                "completed": completed_tasks,
-                "failed": failed_tasks
-            },
-            "projects": {
-                "total": total_projects
-            },
-            "timestamp": datetime.now()
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get stats: {e}")
+# ❌ 已删除 /database/stats 接口 - 调试接口，不需要暴露
 
 
 # =============================
@@ -1000,6 +925,66 @@ async def process_video_generation(task_id: str, request: VideoGenerationRequest
                 except Exception as e:
                     logger.error(f"❌ 多模态融合失败: {e}")
                     context["multimodal_fusion"] = {"error": str(e), "fallback": True}
+
+        # ✨ 新增：如果没有产品图片，调用 Coze 搜索图片
+        has_product_images = False
+        if request.reference_media and request.reference_media.product_images:
+            has_product_images = len(request.reference_media.product_images) > 0
+
+        # 调试日志
+        logger.info(f"🔍 检查产品图片: reference_media={request.reference_media is not None}, has_product_images={has_product_images}")
+        print(f"🔍 检查产品图片: reference_media={request.reference_media is not None}, has_product_images={has_product_images}")
+
+        if not has_product_images:
+            logger.info("🔍 未检测到产品图片，开始从 Coze 搜索图片...")
+            print("🔍 未检测到产品图片，开始从 Coze 搜索图片...")
+
+            try:
+                from core.cliptemplate.coze.image_search import search_reference_image_from_coze
+
+                # 使用 user_description 作为搜索查询
+                image_url = await search_reference_image_from_coze(request.user_description_id)
+
+                if image_url:
+                    logger.info(f"✅ Coze 搜索到图片: {image_url}")
+
+                    # 创建或更新 reference_media
+                    if not request.reference_media:
+                        request.reference_media = ReferenceMediaGroup()
+
+                    if not request.reference_media.product_images:
+                        request.reference_media.product_images = []
+
+                    # 添加搜索到的图片
+                    request.reference_media.product_images.append(
+                        ReferenceMedia(
+                            url=image_url,
+                            type="coze_search",
+                            weight=1.0
+                        )
+                    )
+
+                    # 更新进度
+                    TaskService.update_task_status(
+                        db, task_id, TaskStatus.PROCESSING,
+                        progress=5.0, message="Coze 图片搜索完成"
+                    )
+
+                    # 重新处理多模态输入（包含新添加的图片）
+                    processed_media = await process_reference_media(request.reference_media)
+
+                    # 添加到 context，格式为 {"product_images": [{"url": "..."}]}
+                    context["reference_media"] = {
+                        "product_images": [{"url": image_url}]
+                    }
+
+                    logger.info(f"🎯 已添加 Coze 搜索图片到 reference_media")
+                else:
+                    logger.warning("⚠️ Coze 未搜索到图片")
+
+            except Exception as e:
+                logger.error(f"❌ Coze 图片搜索失败: {e}")
+                # 继续流程，不阻断
 
         # 处理对话上下文 - 智能对话修改功能
         conversation_result = None
