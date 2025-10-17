@@ -753,16 +753,16 @@ class StoryboardToVideoProcessor:
             timeline_in = video_start_time + clip.get("start", 0.0)
             timeline_out = video_start_time + clip.get("end", clip.get("start", 0.0) + clip.get("duration", 0.0))
 
-            # 位置信息
-            position = clip.get("position", {})
-            y_pos = position.get("y", 1000)  # 默认底部
+            # 位置信息 - 针对720p视频优化
+            # Y=580 距离底部约140px，适合大多数场景
+            y_pos = 580
 
             # 构建IMS字幕格式
             ims_clip = {
                 "Type": "Text",
                 "Content": text.replace("\n", "\\N"),  # IMS使用\\N作为换行符
                 "X": 0,
-                "Y": y_pos,
+                "Y": y_pos,  # 固定为580，适配720p视频
                 "Font": "AlibabaPuHuiTi",  # 阿里云内置字体
                 "FontSize": font_size,
                 "FontColor": font_color,
