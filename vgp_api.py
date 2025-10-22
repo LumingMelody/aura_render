@@ -38,6 +38,12 @@ class VGPGenerateRequest(BaseModel):
     # 参考媒体
     reference_media: Optional[ReferenceMedia] = None
 
+    # ✨ 新增：控制是否启用Coze图片搜索
+    enable_coze_search: bool = Field(
+        default=True,
+        description="是否在未提供product_images时自动调用Coze搜索图片（True=启用，False=禁用）"
+    )
+
     # 工作流模板（默认使用新工作流）
     template: str = Field(default="vgp_new_pipeline", description="工作流模板名称")
 
@@ -142,16 +148,17 @@ async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateReques
 
         logger.info(f"🎯 [VGP] Processing request: {request.theme_id} - {request.target_duration_id}s")
 
-        # ✨ 新增：如果没有产品图片，调用 Coze 搜索图片
+        # ✨ 新增：如果没有产品图片，且用户启用了Coze搜索，则调用 Coze 搜索图片
         has_product_images = False
         if request.reference_media and request.reference_media.product_images:
             has_product_images = len(request.reference_media.product_images) > 0
 
         # 调试日志
         logger.info(f"🔍 [VGP] 检查产品图片: reference_media={request.reference_media is not None}, has_product_images={has_product_images}")
+        logger.info(f"🔍 [VGP] Coze搜索开关: enable_coze_search={request.enable_coze_search}")
 
-        if not has_product_images:
-            logger.info("🔍 [VGP] 未检测到产品图片，开始从 Coze 搜索图片...")
+        if not has_product_images and request.enable_coze_search:
+            logger.info("🔍 [VGP] 未检测到产品图片，且已启用Coze搜索，开始从 Coze 搜索图片...")
 
             try:
                 from core.cliptemplate.coze.image_search import search_reference_image_from_coze
@@ -174,6 +181,11 @@ async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateReques
             except Exception as e:
                 logger.error(f"❌ [VGP] Coze 图片搜索失败: {e}")
                 # 继续流程，不阻断
+
+        elif not has_product_images and not request.enable_coze_search:
+            logger.info("ℹ️ [VGP] 未检测到产品图片，但用户已禁用Coze搜索，跳过图片搜索")
+        elif has_product_images:
+            logger.info(f"✅ [VGP] 已有产品图片 ({len(request.reference_media.product_images)} 张)，跳过Coze搜索")
 
         # 创建VGP文档
         vgp_document = node_manager.vgp_protocol.create_document({

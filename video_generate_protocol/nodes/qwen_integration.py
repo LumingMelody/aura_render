@@ -838,10 +838,30 @@ class StoryboardToVideoProcessor:
                         "SubtitleTrackClips": subtitle_clips
                     }]
                     logger.info(f"   ✅ 已添加 {len(subtitle_clips)} 个字幕片段")
+
+                    # ✨ 新增：生成TTS音频并添加到AudioTracks
+                    try:
+                        from video_generate_protocol.nodes.audio_tts_integration import integrate_tts_to_timeline
+
+                        logger.info(f"🎤 开始生成TTS语音...")
+                        timeline = await integrate_tts_to_timeline(
+                            timeline,
+                            subtitle_sequence,
+                            voice="Cherry",        # ✅ 使用阿里云Qwen3-TTS支持的音色（芊悦-温柔女声）
+                            speed=1.0,
+                            upload_to_oss=True,    # 上传到OSS获取永久URL
+                            use_segmented=True     # ✨ 使用分段生成，实现音画精确同步
+                        )
+                        logger.info(f"   ✅ TTS音频已集成到timeline")
+                    except Exception as tts_error:
+                        logger.warning(f"   ⚠️ TTS音频生成失败，视频将无声音: {tts_error}")
+                        import traceback
+                        traceback.print_exc()
+                        # TTS失败不影响主流程，继续生成无声视频
                 else:
                     logger.info(f"   ⚠️ 字幕序列为空，跳过字幕轨道")
             else:
-                logger.info(f"   ℹ️ 未提供字幕序列，跳过字幕轨道")
+                logger.info(f"   ℹ️ 未提供字幕序列，跳过字幕轨道和TTS音频")
 
             # 输出配置
             output_config = {
