@@ -780,7 +780,7 @@ class StoryboardToVideoProcessor:
 
         return ims_subtitles
 
-    async def merge_clips(self, clip_data: List[Dict], output_path: str, subtitle_sequence: Dict = None) -> Dict:
+    async def merge_clips(self, clip_data: List[Dict], output_path: str, subtitle_sequence: Dict = None, vgp_context: Dict = None) -> Dict:
         """
         合并视频片段 - 使用阿里云IMS API
 
@@ -788,6 +788,7 @@ class StoryboardToVideoProcessor:
             clip_data: 视频片段数据列表,每项包含 {"url": ..., "duration": ...}
             output_path: 输出路径(仅用于命名)
             subtitle_sequence: 字幕序列（可选），从Node 14生成
+            vgp_context: VGP上下文（包含滤镜、转场、特效等信息）
 
         返回:
             包含合并后视频URL的字典
@@ -811,19 +812,63 @@ class StoryboardToVideoProcessor:
             )
             client = ice_client.Client(config)
 
-            # 构建Timeline - 不设置TimelineIn和TimelineOut，系统自动前后拼接
+            # 构建基础Timeline
             timeline = {
                 "VideoTracks": [{
                     "VideoTrackClips": [
                         {
-                            "MediaURL": url
-                            # 不设置TimelineIn和TimelineOut，自动前后拼接
-                            # 不设置In和Out，使用视频完整时长
+                            "MediaURL": url,
+                            "Effects": []  # ✅ 添加Effects字段用于转场
                         }
                         for url in video_urls
                     ]
                 }]
             }
+
+            # ✅ 集成IMS转换器 - 处理转场、滤镜、特效
+            if vgp_context:
+                try:
+                    from ims_converter import IMSConverter
+
+                    logger.info(f"🎨 开始应用VGP特效到IMS Timeline...")
+                    converter = IMSConverter(use_filter_preset=True)
+
+                    # 准备VGP输出数据
+                    vgp_result = {
+                        "filter_sequence_id": vgp_context.get("filter_sequence_id", []),
+                        "transition_sequence_id": vgp_context.get("transition_sequence_id", []),
+                        "effects_sequence_id": vgp_context.get("effects_sequence_id", [])
+                    }
+
+                    # 转换为IMS格式
+                    converted = converter.convert(vgp_result)
+
+                    # 合并转换后的轨道
+                    if converted.get("VideoTracks"):
+                        # 添加转场效果到VideoTrackClips
+                        converted_clips = converted["VideoTracks"][0].get("VideoTrackClips", [])
+                        for i, clip in enumerate(timeline["VideoTracks"][0]["VideoTrackClips"]):
+                            if i < len(converted_clips) and converted_clips[i].get("Effects"):
+                                clip["Effects"] = converted_clips[i]["Effects"]
+                                logger.info(f"   ✅ Clip {i+1}: 添加 {len(clip['Effects'])} 个转场效果")
+
+                    # 添加滤镜和特效轨道
+                    if converted.get("EffectTracks"):
+                        if "EffectTracks" not in timeline:
+                            timeline["EffectTracks"] = []
+                        timeline["EffectTracks"].extend(converted["EffectTracks"])
+
+                        total_effects = sum(len(track.get("EffectTrackItems", [])) for track in converted["EffectTracks"])
+                        logger.info(f"   ✅ 添加 {total_effects} 个滤镜/特效")
+
+                    logger.info(f"✨ VGP特效应用完成")
+
+                except ImportError:
+                    logger.warning(f"   ⚠️ IMS转换器未安装，跳过转场/滤镜/特效")
+                except Exception as e:
+                    logger.warning(f"   ⚠️ IMS转换失败: {e}")
+                    import traceback
+                    traceback.print_exc()
 
             # 添加字幕轨道
             if subtitle_sequence:

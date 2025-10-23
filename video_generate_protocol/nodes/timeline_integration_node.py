@@ -119,11 +119,19 @@ class TimelineIntegrationNode(BaseNode):
                 final_video_path_temp = f"/tmp/final_video_{uuid.uuid4().hex[:8]}.mp4"
                 logger.info(f"🔗 [Node 16] Merging {len(video_clips)} clips into final video...")
 
-                # 传递字幕序列到merge_clips
+                # ✅ 准备VGP上下文（包含滤镜、转场、特效信息）
+                vgp_context = {
+                    "filter_sequence_id": context.get("filter_sequence_id", []),
+                    "transition_sequence_id": context.get("transition_sequence_id", []),
+                    "effects_sequence_id": context.get("effects_sequence_id", [])
+                }
+
+                # 传递字幕序列和VGP上下文到merge_clips
                 merge_result = await video_processor.merge_clips(
                     video_clips,
                     final_video_path_temp,
-                    subtitle_sequence=subtitle_seq  # ✨ 传递字幕序列
+                    subtitle_sequence=subtitle_seq,  # ✨ 传递字幕序列
+                    vgp_context=vgp_context  # ✨ 传递VGP上下文（转场、滤镜、特效）
                 )
 
                 if merge_result.get("success"):

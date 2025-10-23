@@ -1677,6 +1677,152 @@ def process_frame_reuse_logic(keyframes: List[Dict]) -> List[Dict]:
     return processed_frames
 
 
+# =============================
+# IMS转换相关API
+# =============================
+
+from ims_converter import IMSConverter
+
+# IMS转换器实例
+ims_converter = IMSConverter(use_filter_preset=True)
+
+
+class IMSConversionRequest(BaseModel):
+    """IMS转换请求"""
+    vgp_result: Dict[str, Any] = Field(..., description="VGP输出结果")
+    use_filter_preset: bool = Field(True, description="是否使用滤镜预设模式")
+    output_config: Optional[Dict[str, Any]] = Field(None, description="输出配置")
+
+
+class IMSConversionResponse(BaseModel):
+    """IMS转换响应"""
+    success: bool
+    timeline: Optional[Dict[str, Any]] = None
+    ims_request: Optional[Dict[str, Any]] = None
+    summary: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+@app.post("/api/ims/convert", response_model=IMSConversionResponse)
+async def convert_vgp_to_ims(request: IMSConversionRequest):
+    """
+    将VGP输出转换为阿里云IMS Timeline格式
+
+    Args:
+        request: 包含VGP输出和配置的请求
+
+    Returns:
+        IMS Timeline和转换摘要
+    """
+    try:
+        logger.info("📝 开始VGP到IMS转换")
+
+        # 创建转换器 (根据请求配置)
+        converter = IMSConverter(use_filter_preset=request.use_filter_preset)
+
+        # 转换为IMS Timeline
+        timeline = converter.convert(request.vgp_result)
+
+        # 生成完整的IMS请求 (如果提供了输出配置)
+        ims_request = None
+        if request.output_config:
+            ims_request = converter.convert_to_ims_request(
+                request.vgp_result,
+                output_config=request.output_config
+            )
+
+        # 获取转换摘要
+        summary = converter.get_conversion_summary(request.vgp_result)
+
+        logger.info(f"✅ IMS转换完成: {summary['total_clips']} clips, {summary['transitions']} transitions")
+
+        return IMSConversionResponse(
+            success=True,
+            timeline=timeline,
+            ims_request=ims_request,
+            summary=summary
+        )
+
+    except Exception as e:
+        logger.error(f"❌ IMS转换失败: {e}", exc_info=True)
+        return IMSConversionResponse(
+            success=False,
+            error=str(e)
+        )
+
+
+@app.get("/api/ims/mappings")
+async def get_ims_mappings():
+    """
+    获取VGP到IMS的映射配置信息
+
+    Returns:
+        所有映射表和配置
+    """
+    from ims_converter.configs.mappings import (
+        VGP_TO_IMS_TRANSITION,
+        VGP_TO_IMS_FILTER_PRESET,
+        VGP_TO_IMS_EFFECT,
+        VGP_TO_IMS_FLOWER_STYLE,
+        IMS_FILTER_CATEGORIES,
+        IMS_EFFECT_CATEGORIES
+    )
+
+    return {
+        "transitions": VGP_TO_IMS_TRANSITION,
+        "filters": {
+            "presets": VGP_TO_IMS_FILTER_PRESET,
+            "categories": IMS_FILTER_CATEGORIES
+        },
+        "effects": {
+            "mapping": VGP_TO_IMS_EFFECT,
+            "categories": IMS_EFFECT_CATEGORIES
+        },
+        "flower_styles": VGP_TO_IMS_FLOWER_STYLE
+    }
+
+
+@app.post("/api/ims/preview")
+async def preview_ims_conversion(request: Dict[str, Any]):
+    """
+    预览IMS转换结果 (不实际提交到IMS)
+
+    Args:
+        request: 包含VGP输出的请求
+
+    Returns:
+        转换预览和摘要信息
+    """
+    try:
+        vgp_result = request.get("vgp_result", {})
+
+        converter = IMSConverter(use_filter_preset=True)
+
+        # 获取转换摘要
+        summary = converter.get_conversion_summary(vgp_result)
+
+        # 转换一小部分用于预览
+        timeline = converter.convert(vgp_result)
+
+        return {
+            "success": True,
+            "summary": summary,
+            "timeline_preview": timeline,
+            "recommendations": {
+                "use_filter_preset": summary["filters"] > 0,
+                "estimated_processing_time": summary["total_clips"] * 2,  # 估算每clip 2秒
+                "warnings": []
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"❌ IMS预览失败: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
