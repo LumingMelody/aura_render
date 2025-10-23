@@ -66,8 +66,8 @@ class AudioProcessingNode(BaseNode):
         {
             "name": "bgm_composition_id",
             "label": "BGM合成结果列表",
-            "type": list,
-            "required": False,  # ✅ 改为可选
+            "type": (str, list),  # ✅ 接受字符串或列表
+            "required": False,
             "default": [],
             "desc": "包含每段匹配的音乐资源，如 [{'segment_index': 0, 'start_time': 0.0, 'end_time': 10.0, 'mood': '温馨', 'genre': '轻音乐', 'narrative_role': '开场', 'transition': '淡入', 'music_suggestion': {'title': '轻松的早晨', 'artist': '轻音乐大师', 'reason': '适合开场的温馨氛围'}, 'matched_audio': {...}, 'alternatives': [...] }]",
             "field_type": "json"
@@ -75,8 +75,8 @@ class AudioProcessingNode(BaseNode):
         {
             "name": "sfx_track_id",
             "label": "音效片段列表",
-            "type": list,
-            "required": False,  # ✅ 改为可选
+            "type": (str, list),  # ✅ 接受字符串或列表
+            "required": False,
             "default": [],
             "desc": "音效片段列表，包含每个片段的开始时间和结束时间，以及音效的描述信息",
             "field_type": "json"

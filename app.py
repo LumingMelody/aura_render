@@ -385,12 +385,43 @@ def extract_node_outputs(node_id: str, node_output: dict) -> dict:
             extracted["bgm_timeline"] = node_output["bgm_timeline"]
 
     elif node_id == "bgm_composition":
+        # ✅ 修复：bgm_composition 返回的是一个 track 对象，需要包装成 audio_processing 期待的格式
+        # audio_processing 期待 bgm_composition_id 是一个 track 对象或clips列表
+        if "clips" in node_output:
+            # 新格式：返回整个track对象作为bgm_composition_id
+            extracted["bgm_composition_id"] = node_output.get("clips", [])
+            extracted["bgm_track"] = node_output  # 保留完整的track对象
+        elif "bgm_composition_id" in node_output:
+            # 旧格式兼容
+            extracted["bgm_composition_id"] = node_output["bgm_composition_id"]
+
+        # 同时保留其他可能的字段
         if "bgm_tracks" in node_output:
             extracted["bgm_tracks"] = node_output["bgm_tracks"]
         if "bgm_tracks_id" in node_output:
             extracted["bgm_tracks_id"] = node_output["bgm_tracks_id"]
-        if "bgm_composition_id" in node_output:
-            extracted["bgm_composition_id"] = node_output["bgm_composition_id"]
+
+    elif node_id == "sfx_integration":
+        # ✅ 修复：sfx_integration 返回 {"sfx_track": {...}}
+        # audio_processing 期待 context 中有 sfx_track (track对象)
+        if "sfx_track" in node_output:
+            extracted["sfx_track"] = node_output["sfx_track"]  # 提取完整的track对象
+            # 同时提取track中的clips作为sfx_track_id（兼容）
+            if isinstance(node_output["sfx_track"], dict) and "clips" in node_output["sfx_track"]:
+                extracted["sfx_track_id"] = node_output["sfx_track"].get("clips", [])
+
+    elif node_id == "subtitle_generation":
+        # ✅ 修复：subtitle_generation 返回 {"subtitle_sequence_id": {...}, "tts_track_id": {...}}
+        # audio_processing 期待 context 中有 tts_track (track对象)
+        if "subtitle_sequence_id" in node_output:
+            extracted["subtitle_sequence_id"] = node_output["subtitle_sequence_id"]
+
+        if "tts_track_id" in node_output:
+            # tts_track_id 是一个 track 对象，需要同时保存为 tts_track
+            extracted["tts_track_id"] = node_output["tts_track_id"]
+            extracted["tts_track"] = node_output["tts_track_id"]  # audio_processing 期待的字段名
+            # 同时提取voice_track（兼容sfx_integration需要的人声轨道）
+            extracted["voice_track_id"] = node_output["tts_track_id"]
 
     elif node_id == "audio_processing":
         if "audio_track_id" in node_output:

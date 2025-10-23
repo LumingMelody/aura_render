@@ -330,6 +330,7 @@ class BaseNode(ABC):
                     return [], True
 
                 # ✅ 使用 json5.loads，并加 try-except 安全兜底
+                parsed = None  # ✅ 修复：初始化parsed变量
                 try:
                     parsed = json5.loads(value)  # ← 使用 json5
                 except Exception as e:
@@ -340,6 +341,10 @@ class BaseNode(ABC):
                         except:
                             print(f"[JSON5 Error] 无法解析 list 字符串: {e}, value={value[:100]}...")
                             return None, False
+                    else:
+                        # ✅ 修复：如果不是list格式，直接返回错误
+                        print(f"[JSON5 Error] 无法解析 list 字符串: {e}, value={value[:100]}...")
+                        return None, False
 
                 if not isinstance(parsed, list):
                     return None, False
