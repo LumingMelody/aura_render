@@ -111,6 +111,21 @@ async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateReques
     api_service = None
     tenant_id = request.tenant_id
     business_id = request.id
+
+    # ✅ 初始化素材库客户端（用于BGM和视频素材匹配）
+    if tenant_id:
+        try:
+            from materials_supplies.material_library_client import init_material_library_client
+            import os
+
+            # 从环境变量获取Authorization (如果没有设置，使用空字符串)
+            auth_token = os.getenv("MATERIAL_LIBRARY_AUTH", "")
+
+            init_material_library_client(tenant_id, auth_token)
+            logger.info(f"✅ [VGP] 素材库客户端初始化成功 (tenant_id={tenant_id})")
+        except Exception as e:
+            logger.warning(f"⚠️ [VGP] 素材库客户端初始化失败: {e}")
+
     if tenant_id:
         try:
             from api_service.api_service import APIService

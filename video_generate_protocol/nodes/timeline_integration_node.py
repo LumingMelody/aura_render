@@ -77,13 +77,18 @@ class TimelineIntegrationNode(BaseNode):
         super().__init__(node_id=node_id, node_type="timeline", name=name)
 
     async def generate(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # ✅ 字段名映射：subtitle_sequence_id → subtitle_sequence
+        # subtitle_node输出的是subtitle_sequence_id，但timeline_integration需要subtitle_sequence
+        if "subtitle_sequence_id" in context and "subtitle_sequence" not in context:
+            context["subtitle_sequence"] = context["subtitle_sequence_id"]
+
         self.validate_context(context)
 
         # 获取输入
         # ✨ 从 Node 5 (asset_request) 的输出中获取视频片段
         video_clips = context.get("video_clips", [])
         audio_tracks = context.get("audio_tracks", [])
-        subtitle_seq = context.get("subtitle_sequence_id")  # ✨ 修正：Node 14输出的字段名是 subtitle_sequence_id
+        subtitle_seq = context.get("subtitle_sequence_id") or context.get("subtitle_sequence")  # ✅ 兼容两种字段名
         intro_outro_seq = context.get("intro_outro_sequence")
 
         # ===  执行最终视频合成 ===
@@ -96,6 +101,23 @@ class TimelineIntegrationNode(BaseNode):
 
         if video_clips and len(video_clips) > 0:
             try:
+                # ✅ 时长验证：检查视频总时长是否符合target_duration
+                target_duration = context.get("target_duration_id") or context.get("target_duration", 60)
+                actual_total_duration = sum(clip.get("target_duration") or clip.get("duration", 5.0) for clip in video_clips)
+
+                logger.info(f"📊 [Node 16] 时长验证:")
+                logger.info(f"   目标时长: {target_duration}秒")
+                logger.info(f"   实际总时长: {actual_total_duration}秒")
+
+                # 允许20%的误差范围
+                if actual_total_duration > target_duration * 1.2:
+                    logger.warning(f"⚠️  [Node 16] 警告：视频总时长({actual_total_duration}s)超出目标({target_duration}s)超过20%！")
+                    logger.warning(f"   这可能导致最终视频过长，建议检查分镜生成和视频裁剪逻辑")
+                elif actual_total_duration < target_duration * 0.8:
+                    logger.warning(f"⚠️  [Node 16] 警告：视频总时长({actual_total_duration}s)少于目标({target_duration}s)的80%！")
+                else:
+                    logger.info(f"✅ [Node 16] 时长在合理范围内（误差 {abs(actual_total_duration - target_duration):.1f}s）")
+
                 # 导入必要模块
                 import sys
                 import os
@@ -119,12 +141,30 @@ class TimelineIntegrationNode(BaseNode):
                 final_video_path_temp = f"/tmp/final_video_{uuid.uuid4().hex[:8]}.mp4"
                 logger.info(f"🔗 [Node 16] Merging {len(video_clips)} clips into final video...")
 
-                # ✅ 准备VGP上下文（包含滤镜、转场、特效信息）
+                # ✅ 准备VGP上下文（包含滤镜、转场、特效、花字、BGM等完整信息）
+                # 🔥 关键修复：传递完整的BGM轨道数据（包含clips字段），而不是单独的ID
+                bgm_data = context.get("bgm_track") or {}  # bgm_track包含完整的clips数组
+                if not bgm_data and "bgm_composition" in context:
+                    # 如果bgm_track不存在，尝试从完整节点输出中获取
+                    bgm_comp = context.get("bgm_composition", {})
+                    if isinstance(bgm_comp, dict):
+                        bgm_data = bgm_comp
+
                 vgp_context = {
                     "filter_sequence_id": context.get("filter_sequence_id", []),
                     "transition_sequence_id": context.get("transition_sequence_id", []),
-                    "effects_sequence_id": context.get("effects_sequence_id", [])
+                    "effects_sequence_id": context.get("effects_sequence_id", []),
+                    "text_overlay_track_id": context.get("text_overlay_track_id", {}),  # ✨ 花字轨道
+                    "auxiliary_track_id": context.get("auxiliary_track_id", {}),  # ✨ 辅助媒体
+                    "bgm_composition_id": bgm_data,  # ✨ BGM完整轨道数据（必须包含clips字段）
+                    "sfx_track_id": context.get("sfx_track") or context.get("sfx_track_id", [])  # ✨ 音效
                 }
+
+                logger.info(f"🎨 [Node 16] VGP Context prepared:")
+                logger.info(f"  - text_overlay_track_id: {'✅' if context.get('text_overlay_track_id') else '❌'}")
+                logger.info(f"  - auxiliary_track_id: {'✅' if context.get('auxiliary_track_id') else '❌'}")
+                logger.info(f"  - bgm_composition_id: {'✅ (dict)' if isinstance(bgm_data, dict) and bgm_data.get('clips') else '❌'}")
+                logger.info(f"  - sfx_track_id: {'✅' if (context.get('sfx_track') or context.get('sfx_track_id')) else '❌'}")
 
                 # 传递字幕序列和VGP上下文到merge_clips
                 merge_result = await video_processor.merge_clips(

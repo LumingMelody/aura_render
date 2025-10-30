@@ -200,9 +200,20 @@ class AudioMixer:
         step = chunk_size // 2
         output = np.zeros_like(audio)
 
-        # 估计噪声谱（前100ms）
+        # ✅ 修复：确保 noise_chunk 长度与 chunk_size 一致
         noise_dur = int(0.1 * self.sample_rate)
-        noise_chunk = audio[:noise_dur] if len(audio) > noise_dur else audio[:chunk_size]
+        if len(audio) < chunk_size:
+            # 音频太短，直接返回不降噪
+            return audio
+
+        # 取前100ms或chunk_size，然后裁剪/填充到chunk_size
+        noise_chunk = audio[:min(noise_dur, chunk_size)]
+        if len(noise_chunk) < chunk_size:
+            # 填充到chunk_size
+            noise_chunk = np.pad(noise_chunk, (0, chunk_size - len(noise_chunk)), mode='constant')
+        else:
+            noise_chunk = noise_chunk[:chunk_size]
+
         noise_fft = np.abs(rfft(noise_chunk))
 
         for i in range(0, len(audio) - chunk_size, step):

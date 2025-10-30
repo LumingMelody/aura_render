@@ -140,8 +140,22 @@ async def _generate_segmented_audio(
                 logger.warning(f"   ⚠️ 片段 {clip_index + 1} 文本为空，跳过")
                 return None
 
-            start_time = clip.get("start", 0.0)
-            end_time = clip.get("end", start_time + clip.get("duration", 0.0))
+            start_time = float(clip.get("start", 0.0))
+
+            # 计算end_time，确保有有效的duration
+            if "end" in clip:
+                end_time = float(clip["end"])
+            elif "duration" in clip and clip["duration"] > 0:
+                end_time = start_time + float(clip["duration"])
+            else:
+                # 如果没有有效的end或duration，使用默认的3秒
+                logger.warning(f"   ⚠️ 片段 {clip_index + 1} 缺少有效的end/duration，使用默认3秒")
+                end_time = start_time + 3.0
+
+            # 防御性检查：确保end_time > start_time
+            if end_time <= start_time:
+                logger.warning(f"   ⚠️ 片段 {clip_index + 1} end_time <= start_time，调整为start + 3.0秒")
+                end_time = start_time + 3.0
 
             try:
                 logger.info(f"   🎵 生成片段 {clip_index + 1}/{len(clips)}: \"{text[:20]}...\" ({start_time:.1f}s - {end_time:.1f}s)")
@@ -150,8 +164,7 @@ async def _generate_segmented_audio(
                 audio_url = await tts_generator.generate_speech(
                     text=text,
                     voice=voice,
-                    speed=speed,
-                    upload_to_oss=upload_to_oss
+                    speed=speed
                 )
 
                 if audio_url:
@@ -159,8 +172,8 @@ async def _generate_segmented_audio(
                     logger.info(f"      ✅ 片段 {clip_index + 1} 生成成功")
                     return {
                         "audio_url": audio_url,
-                        "timeline_in": start_time,
-                        "timeline_out": end_time,
+                        "timeline_in": int(round(start_time)),  # ✨ 转换为整数
+                        "timeline_out": int(round(end_time)),   # ✨ 转换为整数
                         "text": text,
                         "duration": end_time - start_time
                     }
@@ -262,8 +275,7 @@ async def _generate_merged_audio(
     audio_url = await tts_generator.generate_speech(
         text=full_text,
         voice=voice,
-        speed=speed,
-        upload_to_oss=upload_to_oss
+        speed=speed
     )
 
     if not audio_url:
@@ -328,12 +340,30 @@ def build_ims_audio_tracks(audio_track_info: Dict) -> List[Dict]:
         # 构建IMS AudioTrackClips
         ims_clips = []
         for clip in audio_clips:
+            timeline_in = float(clip["timeline_in"])
+            timeline_out = float(clip["timeline_out"])
+
+            # 防御性检查：确保时间��围有效
+            if timeline_out <= timeline_in:
+                logger.warning(f"⚠️ 发现无效的时间范围 [{timeline_in} - {timeline_out}]，跳过此音频片段")
+                continue
+
             ims_clip = {
                 "MediaURL": clip["audio_url"],
-                "TimelineIn": round(clip["timeline_in"], 2),   # ✨ 关键：设置音频入点
-                "TimelineOut": round(clip["timeline_out"], 2)  # ✨ 关键：设置音频出点
+                "TimelineIn": int(round(timeline_in)),   # ✨ 转换为整数（去掉小数点）
+                "TimelineOut": int(round(timeline_out)),  # ✨ 转换为整数（去掉小数点）
+                "Effects": [
+                    {
+                        "Type": "Volume",
+                        "Gain": 1.0  # ✨ TTS人声使用100%音量（清晰可听）
+                    }
+                ]
             }
             ims_clips.append(ims_clip)
+
+        if not ims_clips:
+            logger.warning("⚠️ 所有音频片段的时间范围无效，已全部跳过")
+            return []
 
         audio_tracks = [
             {
@@ -343,7 +373,7 @@ def build_ims_audio_tracks(audio_track_info: Dict) -> List[Dict]:
 
         logger.info(f"📊 已构建IMS AudioTracks (分段模式):")
         logger.info(f"   片段数量: {len(ims_clips)}")
-        logger.info(f"   时间范围: {ims_clips[0]['TimelineIn']:.1f}s - {ims_clips[-1]['TimelineOut']:.1f}s")
+        logger.info(f"   时间范围: {ims_clips[0]['TimelineIn']}s - {ims_clips[-1]['TimelineOut']}s")
         return audio_tracks
 
     # ========== 合并模式：单个完整音频（旧逻辑，向后兼容） ==========
@@ -354,8 +384,14 @@ def build_ims_audio_tracks(audio_track_info: Dict) -> List[Dict]:
             {
                 "AudioTrackClips": [
                     {
-                        "MediaURL": audio_url
+                        "MediaURL": audio_url,
                         # 不设置TimelineIn/TimelineOut，系统会自动对齐到视频开头
+                        "Effects": [
+                            {
+                                "Type": "Volume",
+                                "Gain": 1.0  # ✨ TTS人声使用100%音量
+                            }
+                        ]
                     }
                 ]
             }
@@ -421,7 +457,10 @@ async def integrate_tts_to_timeline(
     audio_tracks = build_ims_audio_tracks(audio_track_info)
 
     if audio_tracks:
-        timeline["AudioTracks"] = audio_tracks
+        # ✅ 合并而不是覆盖（保留已有的BGM、SFX等音频轨道）
+        if "AudioTracks" not in timeline:
+            timeline["AudioTracks"] = []
+        timeline["AudioTracks"].extend(audio_tracks)  # ← 使用extend追加，不是直接赋值
         logger.info("✅ AudioTracks已添加到timeline")
     else:
         logger.warning("⚠️ 未能构建AudioTracks")

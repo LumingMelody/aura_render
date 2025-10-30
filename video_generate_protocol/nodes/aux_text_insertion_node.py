@@ -441,11 +441,64 @@ class AuxTextInsertionNode(BaseNode):
                 prompt=prompt,
                 parse_json=True,
             )
-            indices = response.get("selected_indices", [])
+
+            # ✅ 健壮的JSON提取：即使LLM返回了带解释的文本也能解析
+            indices = []
+
+            if isinstance(response, dict):
+                # 已经是字典，直接使用
+                indices = response.get("selected_indices", [])
+                print(f"[花字选择] 解析方式：直接字典")
+            elif isinstance(response, str):
+                # 是字符串，尝试提取JSON
+                import json
+                import re
+
+                print(f"[花字选择] 解析方式：从文本提取JSON，响应长度：{len(response)}")
+
+                # ✅ 修复：使用更健壮的正则表达式匹配多行JSON
+                # 方法1：查找JSON代码块（支持多行JSON）
+                json_match = re.search(r'```json\s*(\{[^`]+\})\s*```', response, re.DOTALL)
+                if json_match:
+                    try:
+                        json_str = json_match.group(1).strip()
+                        print(f"[花字选择] 方法1：找到JSON代码块，内容：{json_str[:100]}")
+                        parsed = json.loads(json_str)
+                        indices = parsed.get("selected_indices", [])
+                        print(f"[花字选择] 方法1：成功解析，indices={indices}")
+                    except Exception as e:
+                        print(f"[花字选择] 方法1：解析失败 - {e}")
+                        indices = []
+
+                # 方法2：查找纯JSON对象（支持数组）
+                if not indices:
+                    # ✅ 改进：支持包含数组的JSON
+                    json_match = re.search(r'\{\s*"selected_indices"\s*:\s*\[[^\]]*\]\s*\}', response, re.DOTALL)
+                    if json_match:
+                        try:
+                            json_str = json_match.group(0).strip()
+                            print(f"[花字选择] 方法2：找到JSON对象，内容：{json_str}")
+                            parsed = json.loads(json_str)
+                            indices = parsed.get("selected_indices", [])
+                            print(f"[花字选择] 方法2：成功解析，indices={indices}")
+                        except Exception as e:
+                            print(f"[花字选择] 方法2：解析失败 - {e}")
+                            indices = []
+
+                if not indices:
+                    print(f"[花字选择] ⚠️ 所有解析方法均失败，响应片段：{response[:200]}")
+            else:
+                print(f"[花字选择] ⚠️ 响应类型未知: {type(response)}")
+                indices = []
+
             # 过滤合法索引
-            return [shot_blocks[i] for i in indices if 0 <= i < len(shot_blocks)]
+            valid_indices = [i for i in indices if isinstance(i, int) and 0 <= i < len(shot_blocks)]
+            print(f"[花字选择] 从 {len(shot_blocks)} 个分镜中选中了 {len(valid_indices)} 个: {valid_indices}")
+            return [shot_blocks[i] for i in valid_indices]
         except Exception as e:
             print(f"[Selection Error] {e}")
+            import traceback
+            traceback.print_exc()
             return []  # 默认不加
 
 

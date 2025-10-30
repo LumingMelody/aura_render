@@ -503,13 +503,22 @@ class StoryboardToVideoProcessor:
 
                 # === 步骤2: 使用关键帧生成视频 ===
                 logger.info(f"   🎥 正在生成视频片段...")
-                # 提取动态运动描述（前40个字），用于指导视频生成
-                motion_prompt = refined_prompt[:80] if refined_prompt else None
+                # 优先使用单独的video_prompt（运动描述），否则使用refined_prompt的前80个字
+                motion_prompt = keyframe.get("video_prompt") or (refined_prompt[:80] if refined_prompt else None)
+
+                # ✅ 从keyframe的metadata中获取目标duration
+                target_duration = keyframe.get("metadata", {}).get("duration", 5.0)
+                logger.info(f"   🎯 目标时长: {target_duration}秒")
+
                 video_result = await self._generate_video_from_single_image(
                     current_image_url,
-                    duration_seconds=5.0,
-                    video_prompt=motion_prompt  # 使用refined_prompt指导视频生成
+                    duration_seconds=5.0,  # 万相固定5秒
+                    video_prompt=motion_prompt
                 )
+
+                # ✅ 记录目标时长（应该与万相的5秒一致）
+                if video_result:
+                    video_result["target_duration"] = target_duration
 
                 video_clips.append(video_result)
                 logger.info(f"   ✅ 视频片段 {i+1} 生成成功")
@@ -749,7 +758,7 @@ class StoryboardToVideoProcessor:
             if not text:
                 continue
 
-            # 时间对齐（加上视频开始时间）
+            # 时间对齐（加上视���开始时间）
             timeline_in = video_start_time + clip.get("start", 0.0)
             timeline_out = video_start_time + clip.get("end", clip.get("start", 0.0) + clip.get("duration", 0.0))
 
@@ -769,8 +778,8 @@ class StoryboardToVideoProcessor:
                 "Outline": 2,  # 描边宽度
                 "OutlineColour": stroke_color,
                 "Alignment": "TopCenter",
-                "TimelineIn": round(timeline_in, 2),
-                "TimelineOut": round(timeline_out, 2),
+                "TimelineIn": int(round(timeline_in)),  # ✨ 转换为整数
+                "TimelineOut": int(round(timeline_out)),  # ✨ 转换为整数
                 "FontFace": {
                     "Bold": True
                 }
@@ -817,15 +826,15 @@ class StoryboardToVideoProcessor:
                 "VideoTracks": [{
                     "VideoTrackClips": [
                         {
-                            "MediaURL": url,
+                            "MediaURL": clip["url"],
                             "Effects": []  # ✅ 添加Effects字段用于转场
                         }
-                        for url in video_urls
+                        for clip in clip_data
                     ]
                 }]
             }
 
-            # ✅ 集成IMS转换器 - 处理转场、滤镜、特效
+            # ✅ 集成IMS转换器 - 处理转场、滤镜、特效、BGM
             if vgp_context:
                 try:
                     from ims_converter import IMSConverter
@@ -833,15 +842,39 @@ class StoryboardToVideoProcessor:
                     logger.info(f"🎨 开始应用VGP特效到IMS Timeline...")
                     converter = IMSConverter(use_filter_preset=True)
 
-                    # 准备VGP输出数据
+                    # 准备VGP输出数据 - 使用IMS转换器期望的字段名
                     vgp_result = {
                         "filter_sequence_id": vgp_context.get("filter_sequence_id", []),
                         "transition_sequence_id": vgp_context.get("transition_sequence_id", []),
-                        "effects_sequence_id": vgp_context.get("effects_sequence_id", [])
+                        "effects_sequence_id": vgp_context.get("effects_sequence_id", []),
+                        "text_overlay_track_id": vgp_context.get("text_overlay_track_id", {}),  # ✅ 花字
+                        "auxiliary_track_id": vgp_context.get("auxiliary_track_id", {}),  # ✅ 辅助媒体
+                        "bgm_composition_id": vgp_context.get("bgm_composition_id", {}),  # ✅ BGM
+                        "sfx_track_id": vgp_context.get("sfx_track_id", [])  # ✅ 音效
                     }
+
+                    # 调试输出：检查传递的数据
+                    logger.info(f"📊 VGP数据传递检查:")
+                    logger.info(f"  - text_overlay_track_id: {type(vgp_result['text_overlay_track_id']).__name__} - {'有数据' if vgp_result['text_overlay_track_id'] else '空'}")
+
+                    # ✅ BGM详细调试
+                    bgm_data = vgp_result['bgm_composition_id']
+                    logger.info(f"  - bgm_composition_id: {type(bgm_data).__name__} - {'有数据' if bgm_data else '空'}")
+                    if isinstance(bgm_data, dict):
+                        logger.info(f"    └─ keys: {list(bgm_data.keys())}")
+                        logger.info(f"    └─ clips数量: {len(bgm_data.get('clips', []))}")
+                        if bgm_data.get('clips'):
+                            logger.info(f"    └─ 第一个clip: {bgm_data['clips'][0]}")
+
+                    logger.info(f"  - auxiliary_track_id: {type(vgp_result['auxiliary_track_id']).__name__} - {'有数据' if vgp_result['auxiliary_track_id'] else '空'}")
+                    logger.info(f"  - sfx_track_id: {type(vgp_result['sfx_track_id']).__name__} - {'有数据' if vgp_result['sfx_track_id'] else '空'}")
 
                     # 转换为IMS格式
                     converted = converter.convert(vgp_result)
+
+                    # 打印转换摘要
+                    summary = converter.get_conversion_summary(vgp_result)
+                    logger.info(f"📊 VGP转换摘要: {summary}")
 
                     # 合并转换后的轨道
                     if converted.get("VideoTracks"):
@@ -852,6 +885,15 @@ class StoryboardToVideoProcessor:
                                 clip["Effects"] = converted_clips[i]["Effects"]
                                 logger.info(f"   ✅ Clip {i+1}: 添加 {len(clip['Effects'])} 个转场效果")
 
+                    # 添加音频轨道 (BGM + SFX)
+                    if converted.get("AudioTracks"):
+                        if "AudioTracks" not in timeline:
+                            timeline["AudioTracks"] = []
+                        timeline["AudioTracks"].extend(converted["AudioTracks"])
+
+                        total_audio_clips = sum(len(track.get("AudioTrackClips", [])) for track in converted["AudioTracks"])
+                        logger.info(f"   ✅ 添加 {len(converted['AudioTracks'])} 个音频轨道，共 {total_audio_clips} 个音频片段")
+
                     # 添加滤镜和特效轨道
                     if converted.get("EffectTracks"):
                         if "EffectTracks" not in timeline:
@@ -861,10 +903,22 @@ class StoryboardToVideoProcessor:
                         total_effects = sum(len(track.get("EffectTrackItems", [])) for track in converted["EffectTracks"])
                         logger.info(f"   ✅ 添加 {total_effects} 个滤镜/特效")
 
+                    # 添加花字轨道（SubtitleTracks中的花字）
+                    if converted.get("SubtitleTracks"):
+                        if "SubtitleTracks" not in timeline:
+                            timeline["SubtitleTracks"] = []
+
+                        # ✅ 合并花字轨道（而不是覆盖）
+                        for track in converted["SubtitleTracks"]:
+                            timeline["SubtitleTracks"].append(track)
+
+                        total_flower_texts = sum(len(track.get("SubtitleTrackClips", [])) for track in converted["SubtitleTracks"])
+                        logger.info(f"   ✅ 添加 {total_flower_texts} 个花字文本")
+
                     logger.info(f"✨ VGP特效应用完成")
 
                 except ImportError:
-                    logger.warning(f"   ⚠️ IMS转换器未安装，跳过转场/滤镜/特效")
+                    logger.warning(f"   ⚠️ IMS转换器未安��，跳过VGP特效")
                 except Exception as e:
                     logger.warning(f"   ⚠️ IMS转换失败: {e}")
                     import traceback
@@ -879,9 +933,13 @@ class StoryboardToVideoProcessor:
                 )
 
                 if subtitle_clips:
-                    timeline["SubtitleTracks"] = [{
+                    # ✅ 合并字幕轨道（而不是覆盖），保留之前添加的花字
+                    if "SubtitleTracks" not in timeline:
+                        timeline["SubtitleTracks"] = []
+
+                    timeline["SubtitleTracks"].append({
                         "SubtitleTrackClips": subtitle_clips
-                    }]
+                    })
                     logger.info(f"   ✅ 已添加 {len(subtitle_clips)} 个字幕片段")
 
                     # ✨ 新增：生成TTS音频并添加到AudioTracks
@@ -907,6 +965,30 @@ class StoryboardToVideoProcessor:
                     logger.info(f"   ⚠️ 字幕序列为空，跳过字幕轨道")
             else:
                 logger.info(f"   ℹ️ 未提供字幕序列，跳过字幕轨道和TTS音频")
+
+            # ✨ 优化音频混音：自动调整多音轨的Gain，避免爆音
+            if timeline.get("AudioTracks"):
+                try:
+                    from ims_converter.audio_mixer import optimize_ims_audio_tracks
+
+                    logger.info(f"🎚️ 开始优化音频混音...")
+                    timeline = optimize_ims_audio_tracks(
+                        timeline,
+                        total_duration=sum(clip_data[i].get("duration", 5.0) for i in range(len(clip_data)))
+                    )
+                    logger.info(f"   ✅ 音频混音优化完成")
+                except Exception as mixer_error:
+                    logger.warning(f"   ⚠️ 音频混音优化失败: {mixer_error}")
+
+            # ✨ 时间轴对齐：确保所有轨道的时间正确对齐
+            try:
+                from ims_converter.timeline_aligner import align_ims_timeline
+
+                logger.info(f"⏱️ 开始时间轴对齐...")
+                timeline = align_ims_timeline(timeline, clip_data)
+                logger.info(f"   ✅ 时间轴对齐完成")
+            except Exception as align_error:
+                logger.warning(f"   ⚠️ 时间轴对齐失败: {align_error}")
 
             # 输出配置
             output_config = {

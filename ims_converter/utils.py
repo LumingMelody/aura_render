@@ -316,10 +316,11 @@ class FlowerTextConverter:
         Args:
             vgp_text: VGP文字对象
                 {
-                    "text": "太好吃了!",
+                    "text": "精致视界",
                     "start": 0.0,
-                    "duration": 4.5,
+                    "duration": 5.0,
                     "position": "top-center",
+                    "font": "https://fonts.com/ali-future.ttf",
                     "style": {
                         "color": "#FFFFFF",
                         "stroke": "#000000",
@@ -329,31 +330,81 @@ class FlowerTextConverter:
                 }
 
         Returns:
-            IMS花字对象
+            IMS花字对象（符合阿里云IMS标准）
                 {
-                    "Type": "Subtitle",
-                    "Content": "太好吃了!",
-                    "TimelineIn": 0.0,
-                    "TimelineOut": 4.5,
-                    "EffectColorStyle": "CS0001-000001",
-                    "OutlineColour": "#000000",
-                    "BackColour": "#000000"
+                    "Type": "Text",
+                    "Content": "精致视界",
+                    "TimelineIn": 0,
+                    "TimelineOut": 5,
+                    "X": 0.5,
+                    "Y": 0.1,
+                    "Alignment": "TopCenter",
+                    "FontSize": 150,
+                    "EffectColorStyle": "CS0001-000011"
                 }
         """
         style = vgp_text.get("style", {})
 
+        # 转换位置
+        position_data = FlowerTextConverter._convert_position(vgp_text.get("position", "top-center"))
+
         # 选择花字样式
         effect_color_style = FlowerTextConverter._select_flower_style(style)
 
-        return {
-            "Type": "Subtitle",
+        # 转换字体大小（IMS使用较大的绝对值，VGP使用相对小的值）
+        # 修正策略：根据视频分辨率调整字号
+        # - 720p视频（1280x720）：适中大小，不遮挡画面
+        # - 1080p视频（1920x1080）：可以稍大
+        # 默认按720p计算（大部分短视频都是720p）
+        vgp_size = style.get("size", 36)
+
+        # 智能字号映射（避免过大，确保不遮挡画面）
+        # ✅ 再次减半：用户反馈当前大小还是太大
+        if vgp_size <= 24:  # 小字
+            font_size = 20  # 从40减半到20
+        elif vgp_size <= 36:  # 中等字（默认）
+            font_size = 28  # 从55减半到28
+        elif vgp_size <= 48:  # 大字
+            font_size = 35  # 从70减半到35
+        else:  # 超大字
+            font_size = 43  # 从85减半到43
+
+        result = {
+            "Type": "Text",  # ✅ IMS使用"Text"而不是"Subtitle"
             "Content": vgp_text.get("text", ""),
-            "TimelineIn": vgp_text.get("start", 0.0),
-            "TimelineOut": vgp_text.get("start", 0.0) + vgp_text.get("duration", 3.0),
-            "EffectColorStyle": effect_color_style,
-            "OutlineColour": style.get("stroke", "#000000"),
-            "BackColour": "#000000"
+            "TimelineIn": int(vgp_text.get("start", 0.0)),  # IMS使用整数时间
+            "TimelineOut": int(vgp_text.get("start", 0.0) + vgp_text.get("duration", 3.0)),
+            "FontSize": font_size,
+            "EffectColorStyle": effect_color_style,  # ✅ 使用EffectColorStyle而不是EffectColorStyleId
+            **position_data  # ✅ 展开X, Y, Alignment
         }
+
+        return result
+
+    @staticmethod
+    def _convert_position(vgp_position: str) -> Dict[str, Any]:
+        """
+        将VGP位置转换为IMS位置坐标
+
+        Args:
+            vgp_position: VGP位置字符串（如"top-center", "bottom-left"）
+
+        Returns:
+            IMS位置对象 {"X": 0.5, "Y": 0.1, "Alignment": "TopCenter"}
+        """
+        # VGP位置到IMS坐标的映射
+        position_map = {
+            "top-left":      {"X": 0.1, "Y": 0.1, "Alignment": "TopLeft"},
+            "top-center":    {"X": 0.5, "Y": 0.1, "Alignment": "TopCenter"},
+            "top-right":     {"X": 0.9, "Y": 0.1, "Alignment": "TopRight"},
+            "center":        {"X": 0.5, "Y": 0.5, "Alignment": "Center"},
+            "center-bottom": {"X": 0.5, "Y": 0.7, "Alignment": "TopCenter"},
+            "bottom-left":   {"X": 0.1, "Y": 0.9, "Alignment": "BottomLeft"},
+            "bottom-center": {"X": 0.5, "Y": 0.9, "Alignment": "BottomCenter"},
+            "bottom-right":  {"X": 0.9, "Y": 0.9, "Alignment": "BottomRight"}
+        }
+
+        return position_map.get(vgp_position.lower(), position_map["top-center"])
 
     @staticmethod
     def _select_flower_style(style: Dict[str, Any]) -> str:
@@ -364,26 +415,29 @@ class FlowerTextConverter:
             style: VGP样式对象
 
         Returns:
-            IMS EffectColorStyle
+            IMS EffectColorStyle ID（格式：CS0001-000001）
         """
         # 优先根据颜色匹配
         color = style.get("color", "#FFFFFF").upper()
         if color in COLOR_TO_FLOWER_STYLE:
             return COLOR_TO_FLOWER_STYLE[color]
 
-        # 根据粗细和描边选择
+        # 根据粗细和描边选择合适的系列
         is_bold = style.get("bold", False)
-        has_stroke = "stroke" in style
+        has_stroke = "stroke" in style and style.get("stroke")
 
         if is_bold and has_stroke:
-            return "CS0001-000001"  # 粗体+描边
+            # 粗体+描边：使用CS0001系列（醒目效果）
+            return "CS0001-000011"  # 高级花字效果
         elif is_bold:
-            return "CS0002-000001"  # 粗体干净
+            # 粗体：使用CS0002系列（干净粗体）
+            return "CS0002-000009"  # 粗体干净效果
         elif has_stroke:
-            return "CS0003-000001"  # 优雅
+            # 有描边：使用CS0001系列（优雅效果）
+            return "CS0001-000004"  # 系统花字效果
 
-        # 默认
-        return "white_grad"
+        # 默认：使用经典白色花字
+        return "CS0001-000001"  # ✅ 默认使用有效的IMS样式ID
 
 
 class OverlayConverter:
@@ -425,10 +479,14 @@ class OverlayConverter:
         media_type = vgp_media.get("type", "image")
         ims_type = "Image" if media_type == "image" else "Video"
 
+        # ✅ IMS要求TimelineIn/TimelineOut必须是int类型
+        timeline_in = int(round(vgp_media.get("start", 0.0)))
+        timeline_out = int(round(vgp_media.get("start", 0.0) + vgp_media.get("duration", 3.0)))
+
         return {
             "MediaURL": vgp_media.get("file_path", ""),
-            "TimelineIn": vgp_media.get("start", 0.0),
-            "TimelineOut": vgp_media.get("start", 0.0) + vgp_media.get("duration", 3.0),
+            "TimelineIn": timeline_in,
+            "TimelineOut": timeline_out,
             "Type": ims_type,
             "X": position["X"],
             "Y": position["Y"],

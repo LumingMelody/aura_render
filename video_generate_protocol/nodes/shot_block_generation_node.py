@@ -20,6 +20,14 @@ from functools import wraps
 # from llm import QwenLLM  # 示例导入，根据实际路径调整
 from llm import QwenLLM  # 请确保这个模块存在
 
+# ✨ 新增：导入12步提示词优化器
+try:
+    from video_generate_protocol.prompt_optimizer import VideoPromptOptimizer
+    OPTIMIZER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"⚠️ 提示词优化器导入失败: {e}，将使用旧版分镜生成")
+    OPTIMIZER_AVAILABLE = False
+
 
 VIDEO_TYPE_STYLES = {
     # —————— 商业类 ——————
@@ -242,7 +250,8 @@ class ShotBlockGenerationNode(BaseNode):
 
     system_parameters = {
         "min_shot_duration": 2,
-        "max_shot_duration": 10
+        "max_shot_duration": 10,
+        "use_advanced_optimizer": True  # ✨ 新增：是否使用12步提示词优化器
     }
 
     def __init__(self, node_id: str, name: str = "分镜块生成"):
@@ -251,6 +260,19 @@ class ShotBlockGenerationNode(BaseNode):
         # 初始化缓存
         self.cache = ShotBlockCache(max_size=100, ttl=3600)
 
+        # ✨ 新增：初始化12步优化器
+        self.optimizer = None
+        if OPTIMIZER_AVAILABLE and self.system_parameters.get("use_advanced_optimizer", True):
+            try:
+                self.optimizer = VideoPromptOptimizer()
+                # 只在非重载进程中打印日志，避免开发模式重复日志
+                import os
+                if os.environ.get('RUN_MAIN') != 'true':  # 只在主进程打印
+                    logger.info("✅ 12步提示词优化器已启用")
+            except Exception as e:
+                logger.warning(f"⚠️ 优化器初始化失败: {e}，将使用旧版生成")
+                self.optimizer = None
+
         # 性能统计
         self.stats = {
             "total_requests": 0,
@@ -258,7 +280,8 @@ class ShotBlockGenerationNode(BaseNode):
             "llm_calls": 0,
             "fallback_calls": 0,
             "json_parse_failures": 0,
-            "avg_response_time": 0.0
+            "avg_response_time": 0.0,
+            "optimizer_calls": 0  # ✨ 新增：优化器调用次数
         }
 
     async def generate(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -269,37 +292,22 @@ class ShotBlockGenerationNode(BaseNode):
             # 验证输入上下文
             self.validate_context(context)
 
-            emotions: Dict[str, int] = context["emotions_id"].get("emotions", {})
-            structure_template: Dict[str, Any] = context["structure_template_id"]
-            user_video_type: str = context["video_type_id"]
-
-            if not structure_template:
-                raise ValueError("video_content 中缺少 structure_template")
-
             # ✅ 修复：优先读取 target_duration_id，如果没有则尝试 target_duration
             total_duration = context.get("target_duration_id") or context.get("target_duration", 60)
-            logger.info(f"🎯 [Node 3] 目标视频时长: {total_duration} 秒")
 
-            # 检查缓存（包含目标时长）
-            cached_result = self.cache.get(emotions, user_video_type, structure_template, total_duration)
-            if cached_result:
-                self.stats["cache_hits"] += 1
-                logger.info(f"✅ 缓存命中（时长: {total_duration}s），跳过LLM调用")
-                return {"shot_blocks_id": cached_result}
+            # ✨ 新增：如果启用了优化器，使用12步优化流程
+            if self.optimizer:
+                logger.info(f"🎨 使用12步提示词优化器生成分镜...")
+                return await self._generate_with_optimizer(context, total_duration)
 
-            # 生成分镜块
-            shot_blocks = await self._generate_shot_blocks_with_retry(
-                emotions, structure_template, user_video_type, total_duration
-            )
-
-            # 存储到缓存（包含目标时长）
-            self.cache.set(emotions, user_video_type, structure_template, shot_blocks, total_duration)
-            self.stats["llm_calls"] += 1
-
-            return {"shot_blocks_id": shot_blocks}
+            # 原有的旧版生成逻辑
+            logger.info(f"🎬 使用旧版分镜生成...")
+            return await self._generate_legacy(context, total_duration)
 
         except Exception as e:
-            logger.info(f"❌ ShotBlockGenerationNode.generate 失败: {e}")
+            logger.error(f"❌ ShotBlockGenerationNode.generate 失败: {e}")
+            import traceback
+            traceback.print_exc()
             # 使用fallback
             fallback_shots = self._fallback_shots("通用", 60, "冷静")
             self.stats["fallback_calls"] += 1
@@ -309,6 +317,143 @@ class ShotBlockGenerationNode(BaseNode):
             # 更新性能统计
             response_time = time.time() - start_time
             self._update_stats(response_time)
+
+    async def _generate_with_optimizer(self, context: Dict[str, Any], total_duration: int) -> Dict[str, Any]:
+        """使用12步优化器生成分镜"""
+        try:
+            # 提取产品信息
+            product_name = context.get("keywords_id", ["产品"])[0] if isinstance(context.get("keywords_id"), list) else "产品"
+            user_description = context.get("user_description_id", "")
+
+            # 调用优化器
+            logger.info(f"📦 产品: {product_name}, 目标时长: {total_duration}秒")
+            optimized_result = await self.optimizer.optimize(
+                product_name=product_name,
+                user_input=user_description,
+                target_duration=total_duration  # ✅ 传递目标时长
+            )
+
+            self.stats["optimizer_calls"] += 1
+
+            logger.info(f"✅ 优化器生成完成:")
+            logger.info(f"   视觉风格: {optimized_result.visual_style.target_style}")
+            logger.info(f"   分镜数量: {len(optimized_result.storyboard)}")
+            logger.info(f"   总时长: {optimized_result.total_duration}秒")
+
+            # 转换为节点期望的格式
+            shot_blocks = []
+            for shot in optimized_result.storyboard:
+                # 使用优化后的细化描述
+                visual_desc = shot.first_frame_clean or shot.first_frame_refined or shot.first_frame or shot.description
+
+                shot_block = {
+                    "shot_type": "特写",  # 默认类型，可以从description中推断
+                    "duration": shot.duration,
+                    "visual_description": visual_desc,
+                    "pacing": "慢镜头" if shot.duration >= 3 else "常规",
+                    "caption": shot.reason[:20] if shot.reason else "",  # 使用设计理由作为字幕
+                    "start_time": shot_blocks[-1]["end_time"] if shot_blocks else 0.0,
+                    "end_time": 0.0,  # 将在下面计算
+
+                    # ✨ 新增：保存优化后的详细信息
+                    "_optimized": {
+                        "first_frame_refined": shot.first_frame_refined,
+                        "middle_process_refined": shot.middle_process_refined,
+                        "generation_strategy": shot.generation_strategy,
+                        "reference_source": shot.reference_source,
+                        "visual_style": {
+                            "target_style": optimized_result.visual_style.target_style,
+                            "core_theme": optimized_result.visual_style.core_theme,
+                            "core_emotion": optimized_result.visual_style.core_emotion,
+                            "color_palette": optimized_result.visual_style.color_palette,
+                            "lighting_rules": optimized_result.visual_style.lighting_rules
+                        }
+                    }
+                }
+
+                # 计算结束时间
+                shot_block["end_time"] = shot_block["start_time"] + shot_block["duration"]
+                shot_blocks.append(shot_block)
+
+            # ✅ 时长校验和调整：确保总时长符合 target_duration
+            actual_duration = sum(shot["duration"] for shot in shot_blocks)
+            logger.info(f"📊 [优化器] 生成的分镜总时长: {actual_duration:.1f} 秒（目标: {total_duration} 秒）")
+
+            # ✅ 修复：根据万相固定5秒，重新调整分镜数量而不是缩减时长
+            # 万相视频固定5秒，所以应该生成 target_duration/5 个分镜
+            import math
+            target_shot_count = math.ceil(total_duration / 5.0)
+            current_shot_count = len(shot_blocks)
+
+            logger.info(f"🎯 [优化器] 万相固定5秒/视频，目标分镜数: {target_shot_count}，当前分镜数: {current_shot_count}")
+
+            if current_shot_count != target_shot_count:
+                logger.info(f"⚠️  [优化器] 分镜数量不匹配，需要调整...")
+
+                if current_shot_count > target_shot_count:
+                    # 分镜过多，需要合并
+                    logger.info(f"   🔗 合并分镜: {current_shot_count} → {target_shot_count}")
+                    shot_blocks = self._merge_shots(shot_blocks, target_shot_count)
+                else:
+                    # 分镜过少，需要拆分（罕见情况）
+                    logger.info(f"   ✂️ 拆分分镜: {current_shot_count} → {target_shot_count}")
+                    shot_blocks = self._split_shots(shot_blocks, target_shot_count)
+
+                # 调整每个分镜的时长为5秒，并重新计算时间戳
+                current_time = 0.0
+                for shot in shot_blocks:
+                    shot["duration"] = 5.0
+                    shot["start_time"] = round(current_time, 1)
+                    shot["end_time"] = round(current_time + 5.0, 1)
+                    current_time += 5.0
+
+                logger.info(f"✅ [优化器] 调整后: {len(shot_blocks)} 个分镜，每个5秒，总时长 {current_time:.1f}秒")
+            else:
+                # 分镜数量正确，但可能时长不对，统一调整为5秒
+                logger.info(f"✅ [优化器] 分镜数量正确，调整每个分镜为5秒")
+                current_time = 0.0
+                for shot in shot_blocks:
+                    shot["duration"] = 5.0
+                    shot["start_time"] = round(current_time, 1)
+                    shot["end_time"] = round(current_time + 5.0, 1)
+                    current_time += 5.0
+
+            return {"shot_blocks_id": shot_blocks}
+
+        except Exception as e:
+            logger.error(f"❌ 优化器生成失败: {e}，降级为旧版生成")
+            import traceback
+            traceback.print_exc()
+            return await self._generate_legacy(context, total_duration)
+
+    async def _generate_legacy(self, context: Dict[str, Any], total_duration: int) -> Dict[str, Any]:
+        """旧版分镜生成逻辑（原有代码）"""
+        emotions: Dict[str, int] = context["emotions_id"].get("emotions", {})
+        structure_template: Dict[str, Any] = context["structure_template_id"]
+        user_video_type: str = context["video_type_id"]
+
+        if not structure_template:
+            raise ValueError("video_content 中缺少 structure_template")
+
+        logger.info(f"🎯 [Node 3] 目标视频时长: {total_duration} 秒")
+
+        # 检查缓存（包含目标时长）
+        cached_result = self.cache.get(emotions, user_video_type, structure_template, total_duration)
+        if cached_result:
+            self.stats["cache_hits"] += 1
+            logger.info(f"✅ 缓存命中（时长: {total_duration}s），跳过LLM调用")
+            return {"shot_blocks_id": cached_result}
+
+        # 生成分镜块
+        shot_blocks = await self._generate_shot_blocks_with_retry(
+            emotions, structure_template, user_video_type, total_duration
+        )
+
+        # 存储到缓存（包含目标时长）
+        self.cache.set(emotions, user_video_type, structure_template, shot_blocks, total_duration)
+        self.stats["llm_calls"] += 1
+
+        return {"shot_blocks_id": shot_blocks}
 
     @async_retry_shot_gen(max_attempts=3, delay=1.0, backoff=2.0)
     async def _generate_shot_blocks_with_retry(self, emotions: Dict[str, int],
@@ -481,12 +626,70 @@ class ShotBlockGenerationNode(BaseNode):
     def _calculate_shots_needed(self, total_duration: int) -> int:
         """
         根据目标时长计算需要的 shot blocks 数量
-        每段视频固定 5 秒
+        每段视频固定 5 秒（万相API限制）
         """
         import math
         shots_needed = math.ceil(total_duration / 5.0)
         logger.info(f"🎯 [Node 3] 目标时长 {total_duration}秒，需要生成 {shots_needed} 个镜头（每个约5秒）")
         return shots_needed
+
+    def _merge_shots(self, shot_blocks: List[Dict], target_count: int) -> List[Dict]:
+        """
+        合并分镜：将过多的分镜合并为目标数量
+
+        例如：4个分镜 → 2个分镜，每2个合并为1个
+        """
+        if len(shot_blocks) <= target_count:
+            return shot_blocks
+
+        merged = []
+        merge_ratio = len(shot_blocks) / target_count
+
+        for i in range(target_count):
+            # 计算这个合并分镜应该包含哪些原始分镜
+            start_idx = int(i * merge_ratio)
+            end_idx = int((i + 1) * merge_ratio)
+
+            # 取这些分镜中的第一个作为基础
+            base_shot = shot_blocks[start_idx].copy()
+
+            # 合并描述（取第一个的描述，或者拼接）
+            descriptions = [shot_blocks[j]["visual_description"] for j in range(start_idx, min(end_idx, len(shot_blocks)))]
+            if len(descriptions) > 1:
+                # 简单拼接前两个描述
+                base_shot["visual_description"] = f"{descriptions[0][:50]}... + {descriptions[1][:30]}..."
+
+            # ✅ 合并字幕 - 保留完整内容，让后续节点根据时长智能处理
+            captions = [shot_blocks[j].get("caption", "") for j in range(start_idx, min(end_idx, len(shot_blocks)))]
+            base_shot["caption"] = " ".join([c for c in captions if c])  # 去掉[:30]截断
+
+            merged.append(base_shot)
+
+        logger.info(f"   🔗 已合并: {len(shot_blocks)} 个分镜 → {len(merged)} 个分镜")
+        return merged
+
+    def _split_shots(self, shot_blocks: List[Dict], target_count: int) -> List[Dict]:
+        """
+        拆分分镜：将过少的分镜拆分为目标数量（罕见情况）
+
+        例如：1个分镜 → 2个分镜，复制并调整描述
+        """
+        if len(shot_blocks) >= target_count:
+            return shot_blocks
+
+        result = []
+        for shot in shot_blocks:
+            result.append(shot.copy())
+            # 如果还需要更多分镜，复制当前分镜
+            while len(result) < target_count and len(result) < target_count:
+                duplicated = shot.copy()
+                duplicated["visual_description"] = f"{shot['visual_description'][:60]}... (续)"
+                result.append(duplicated)
+                if len(result) >= target_count:
+                    break
+
+        logger.info(f"   ✂️ 已拆分: {len(shot_blocks)} 个分镜 → {len(result)} 个分镜")
+        return result[:target_count]  # 确保不超过目标数量
 
     def _format_segment_name(self, key: str) -> str:
         mapping = {"intro": "引入", "body": "主体", "conclusion": "结尾"}

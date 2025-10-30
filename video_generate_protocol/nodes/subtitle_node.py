@@ -158,8 +158,15 @@ class SubtitleNode(BaseNode):
             if end - start < self.system_parameters["min_duration"]:
                 continue
 
+            # ✅ 使用Qwen根据时长生成合适的字幕
+            optimized_caption = await self._generate_duration_aware_subtitle(
+                original_caption=caption,
+                duration=duration,
+                visual_description=shot.get("visual_description", "")
+            )
+
             # 换行处理
-            wrapped_lines = self._wrap_text(caption, video_width)
+            wrapped_lines = self._wrap_text(optimized_caption, video_width)
             if not wrapped_lines:
                 continue
 
@@ -177,7 +184,9 @@ class SubtitleNode(BaseNode):
                     "pacing": shot["pacing"],
                     "should_tts": should_tts,
                     "text_color": final_color,
-                    "stroke_color": final_stroke
+                    "stroke_color": final_stroke,
+                    "original_caption": caption,  # 保留原始caption供调试
+                    "optimized": True
                 }
             }
             subtitle_clips.append(clip)
@@ -418,6 +427,91 @@ class SubtitleNode(BaseNode):
             "text_color": "#FFFFFF",
             "stroke_color": "#000000"
         }
+
+    async def _generate_duration_aware_subtitle(
+        self,
+        original_caption: str,
+        duration: float,
+        visual_description: str = ""
+    ) -> str:
+        """
+        使用Qwen根据视频时长生成合适长度的字幕文本
+
+        参数:
+            original_caption: 原始字幕/描述文本
+            duration: 镜头时长（秒）
+            visual_description: 视觉描述（可选）
+
+        返回:
+            优化后的字幕文本
+        """
+        # 计算合适的字数范围（按正常语速 3-4字/秒）
+        min_chars = max(8, int(duration * 2.5))  # 最少字数
+        max_chars = int(duration * 4)            # 最多字数
+
+        # 如果原始caption已经在合适范围内，直接返回
+        if min_chars <= len(original_caption) <= max_chars:
+            return original_caption
+
+        # 构建提示词
+        prompt = f"""
+你是一位专业的视频字幕编辑。请根据以下信息，生成适合{duration}秒展示的简短字幕。
+
+【原始描述】
+{original_caption}
+
+【视觉内容】
+{visual_description if visual_description else "（无详细描述）"}
+
+【要求】
+1. 字数控制在 {min_chars}-{max_chars} 字之间
+2. 提炼核心信息，突出重点
+3. 语言简洁有力，适合{duration}秒朗读
+4. 保持原意，不添加额外信息
+5. 直接输出字幕文本，不要加引号或其他标记
+
+请生成字幕：
+"""
+
+        try:
+            # 调用Qwen生成（同步调用）
+            result = self.qwen.generate(prompt=prompt.strip())
+
+            if result and isinstance(result, str):
+                optimized = result.strip().strip('"').strip("'")  # 去除可能的引号
+
+                # 验证字数
+                if len(optimized) > max_chars * 1.2:  # 允许20%超出
+                    # 如果还是太长，强制截断
+                    optimized = optimized[:max_chars] + "..."
+
+                print(f"[字幕优化] {duration}秒: {len(original_caption)}字 → {len(optimized)}字")
+                print(f"   原文: {original_caption[:30]}...")
+                print(f"   优化: {optimized}")
+
+                return optimized
+            else:
+                # LLM调用失败，降级为简单截断
+                print(f"[字幕优化] LLM返回异常，使用降级策略")
+                return self._fallback_truncate(original_caption, max_chars)
+
+        except Exception as e:
+            print(f"[字幕优化] 错误: {e}，使用降级策略")
+            return self._fallback_truncate(original_caption, max_chars)
+
+    def _fallback_truncate(self, text: str, max_chars: int) -> str:
+        """降级策略：智能截断文本"""
+        if len(text) <= max_chars:
+            return text
+
+        # 尝试在句号、逗号等位置截断
+        for delimiter in ["。", "，", "、", " "]:
+            pos = text[:max_chars].rfind(delimiter)
+            if pos > max_chars * 0.6:  # 至少保留60%
+                return text[:pos + 1]
+
+        # 无法智能截断，直接截断并加省略号
+        return text[:max_chars - 3] + "..."
 
     def _wrap_text(self, text: str, video_width: int) -> List[str]:
         max_chars = self.system_parameters["max_chars_per_line"]

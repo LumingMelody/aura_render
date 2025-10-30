@@ -1,32 +1,153 @@
 # matcher/bgm_matcher.py
 from materials_supplies.models import BGMRequest, BGMResponse
+from materials_supplies.material_library_client import get_material_library_client
 import random
+import logging
 from typing import List
+import subprocess
+import json
+
+logger = logging.getLogger(__name__)
+
 
 async def match_bgm(request: BGMRequest) -> List[BGMResponse]:
-    # 模拟从 Java 获取 BGM 候选
-    candidates = [
-        {"url": "https://audio.com/tech-bgm.mp3", "duration": 120.0},
-        {"url": "https://audio.com/epic-bgm.mp3", "duration": 90.0}
+    """
+    从素材库匹配BGM音频
+
+    Args:
+        request: BGM请求，包含:
+            - description: 描述信息 (如"冷静情绪，使用合成贝斯...")
+            - category: 音乐类型 (如"极简电子")
+            - duration: 需要的时长(秒)
+
+    Returns:
+        BGM响应列表，包含匹配到的音频URL和裁剪信息
+    """
+    client = get_material_library_client()
+
+    if not client:
+        logger.warning("素材库客户端未初始化，BGM匹配失败")
+        return []
+
+    # 从description中提取mood（情绪）
+    mood = ""
+    if "情绪" in request.description:
+        mood = request.description.split("情绪")[0].strip()
+
+    # 构造搜索策略 (多级fallback)
+    search_strategies = [
+        {"tag": request.category, "keyword": ""},           # 优先: 精确风格 (如"极简电子")
+        {"tag": mood, "keyword": ""},                       # 次选: 情绪匹配 (如"冷静")
+        {"tag": request.category, "keyword": mood},         # 组合: 风格+情绪
+        {"tag": "", "keyword": "背景音乐"},                  # 兜底: 任意BGM
     ]
 
-    results = []
-    for c in candidates:
-        duration = c["duration"]
-        if duration >= request.duration:
-            cut_start = random.uniform(0, duration - request.duration)
-            cut_end = cut_start + request.duration
-        else:
-            cut_start = 0.0
-            cut_end = duration
+    logger.info(f"🎵 开始匹配BGM: category={request.category}, mood={mood}, duration={request.duration}秒")
 
-        results.append(BGMResponse(
-            url=c["url"],
-            cut_start=cut_start,
-            cut_end=cut_end,
-            duration=c["duration"]
-        ))
-    return results
+    # 逐个尝试搜索策略
+    for idx, strategy in enumerate(search_strategies):
+        tag = strategy["tag"]
+        keyword = strategy["keyword"]
+
+        logger.debug(f"   尝试策略 {idx+1}: tag='{tag}', keyword='{keyword}'")
+
+        # 调用素材库API
+        audio_list = client.search_audios(
+            keyword=keyword if keyword else None,
+            tag=tag if tag else None,
+            page_size=5
+        )
+
+        if audio_list and len(audio_list) > 0:
+            logger.info(f"   ✅ 策略 {idx+1} 找到 {len(audio_list)} 个候选音频")
+
+            # 转换为BGMResponse
+            responses = []
+            for item in audio_list[:3]:  # 取前3个作为候选
+                audio_url = item.get("url", "")
+
+                if not audio_url:
+                    logger.warning(f"   跳过无效音频: {item.get('name')}")
+                    continue
+
+                # 获取音频时长
+                audio_duration = await _get_audio_duration(audio_url)
+
+                if audio_duration is None or audio_duration <= 0:
+                    logger.warning(f"   无法获取音频时长，跳过: {audio_url}")
+                    continue
+
+                # 随机裁剪片段
+                if audio_duration >= request.duration:
+                    cut_start = random.uniform(0, audio_duration - request.duration)
+                    cut_end = cut_start + request.duration
+                else:
+                    # 音频时长不够，使用全部
+                    cut_start = 0.0
+                    cut_end = audio_duration
+                    logger.warning(f"   音频时长不足: {audio_duration}秒 < {request.duration}秒")
+
+                responses.append(BGMResponse(
+                    url=audio_url,
+                    cut_start=round(cut_start, 2),
+                    cut_end=round(cut_end, 2),
+                    duration=audio_duration
+                ))
+
+                logger.info(f"   添加候选: {item.get('name')} [{cut_start:.1f}s - {cut_end:.1f}s]")
+
+            if responses:
+                logger.info(f"🎉 BGM匹配成功，返回 {len(responses)} 个候选")
+                return responses
+
+    # 所有策略都失败
+    logger.warning("⚠️ 所有BGM搜索策略都失败，返回空列表（视频将不包含BGM）")
+    return []
+
+
+async def _get_audio_duration(audio_url: str) -> float:
+    """
+    使用ffprobe获取音频文件的时长
+
+    Args:
+        audio_url: 音频文件URL
+
+    Returns:
+        音频时长(秒)，失败返回None
+    """
+    try:
+        # 使用ffprobe获取音频信息
+        cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'json',
+            audio_url
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            duration = float(data['format']['duration'])
+            logger.debug(f"   音频时长: {duration:.2f}秒")
+            return duration
+        else:
+            logger.warning(f"   ffprobe失败: {result.stderr}")
+            return None
+
+    except subprocess.TimeoutExpired:
+        logger.warning(f"   ffprobe超时: {audio_url}")
+        return None
+    except Exception as e:
+        logger.warning(f"   获取音频时长失败: {e}")
+        # 如果ffprobe失败，返回默认时长
+        return 120.0  # 默认假设2分钟
 
 
     def generate(self, context: Dict[str, Any]) -> Dict[str, Any]:

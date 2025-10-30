@@ -41,23 +41,14 @@ class QwenTTSGenerator:
             # 千问TTS使用同步模式，不需要X-DashScope-Async
         }
 
-        # 初始化OSS上传器（可选，用于永久化音频）
-        try:
-            from utils.oss_uploader import get_oss_uploader
-            self.oss_uploader = get_oss_uploader()
-            self.use_oss = True
-            logger.info("✅ OSS上传器初始化成功")
-        except Exception as e:
-            logger.warning(f"⚠️ OSS上传器初始化失败，将使用千问临时URL: {e}")
-            self.oss_uploader = None
-            self.use_oss = False
+        # ✅ 不再需要OSS上传器，直接使用千问临时URL（3小时有效）
+        logger.info("✅ TTS生成器初始化完成，将使用千问临时URL")
 
     async def generate_speech(
         self,
         text: str,
         voice: str = "Cherry",  # ✅ 使用阿里云Qwen3-TTS支持的音色（芊悦-女声）
-        speed: float = 1.0,
-        upload_to_oss: bool = True
+        speed: float = 1.0
     ) -> Optional[str]:
         """
         生成语音并返回音频URL
@@ -74,10 +65,9 @@ class QwenTTSGenerator:
                 - "Dylan": 北京-晓东（北京话男声）
                 - "Sunny": 四川-晴儿（四川话女声）
             speed: 语速，范围 0.5-2.0，默认1.0
-            upload_to_oss: 是否上传到OSS获取永久URL（默认True）
 
         Returns:
-            音频URL（OSS永久URL或千问临时URL），失败返回None
+            音频URL（千问临时URL，3小时有效），失败返回None
 
         Example:
             >>> generator = QwenTTSGenerator()
@@ -129,30 +119,11 @@ class QwenTTSGenerator:
 
                     logger.info(f"✅ 千问TTS生成成功: {audio_url[:80]}...")
 
-            # 可选：上传到OSS获取永久URL
-            if upload_to_oss and self.use_oss and self.oss_uploader:
-                try:
-                    logger.info("📤 正在上传音频到OSS...")
-                    # 下载临时音频
-                    temp_audio_path = await self._download_audio(audio_url)
-
-                    # 上传到OSS
-                    oss_url = self.oss_uploader.upload_file(
-                        temp_audio_path,
-                        folder="tts_audio"
-                    )
-
-                    # 清理临时文件
-                    Path(temp_audio_path).unlink(missing_ok=True)
-
-                    logger.info(f"✅ 音频已上传到OSS: {oss_url}")
-                    return oss_url
-
-                except Exception as e:
-                    logger.warning(f"⚠️ OSS上传失败，使用千问临时URL: {e}")
-                    return audio_url  # 降级使用千问临时URL（24小时有效）
-            else:
-                return audio_url  # 直接返回千问临时URL
+            # ✅ 直接返回千问临时URL（3小时有效，足够使用）
+            # 千问TTS返回的URL格式：http://dashscope-result-*.oss-*.aliyuncs.com/...
+            # 有效期：3小时，对于视频生成流程完全够用
+            logger.info(f"✅ 使用千问临时URL（3小时有效）")
+            return audio_url
 
         except Exception as e:
             logger.error(f"❌ TTS生成失败: {e}")
