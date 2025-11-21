@@ -3,7 +3,7 @@ VGP新工作流API - 专用于 vgp_new_pipeline
 提供 /vgp/generate 接口
 完全复用 /generate 的处理逻辑，只使用不同的节点序列
 """
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,10 +12,14 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import uuid
+import json
 
 # 导入数据库相关
 from sqlalchemy.orm import Session
 from database import get_db, TaskService, TaskStatus
+
+# 导入Qwen LLM用于意图识别
+from llm.qwen import QwenLLM
 
 # 创建路由
 vgp_router = APIRouter(prefix="/vgp", tags=["VGP Workflow"])
@@ -85,11 +89,130 @@ class VGPStatusResponse(BaseModel):
     error_message: Optional[str] = None
 
 
+# ============== AI意图识别辅助函数 ==============
+
+def needs_ai_analysis(keywords: List[str]) -> bool:
+    """
+    判断是否需要AI分析用户意图
+
+    Args:
+        keywords: 关键词列表
+
+    Returns:
+        True if需要AI分析，False otherwise
+    """
+    if not keywords or len(keywords) == 0:
+        return True
+
+    # 明显的形容词列表（如果第一个关键词是这些，说明可能没有正确提取产品名）
+    adjectives = {
+        '4K', '高清', '智能', '便携', '高端', '专业', '创新', '科技',
+        '时尚', '现代', '精致', '轻薄', '强大', '优质', '先进', '卓越',
+        '产品', '展示', '视频', '广告', '宣传', '介绍'
+    }
+
+    # 第一个关键词是形容词 → 需要AI
+    if keywords[0] in adjectives:
+        logger.info(f"🤖 [AI意图识别] 第一个关键词'{keywords[0]}'是形容词，需要AI分析")
+        return True
+
+    # 关键词太少 → 需要AI
+    if len(keywords) < 2:
+        logger.info(f"🤖 [AI意图识别] 关键词太少({len(keywords)}个)，需要AI分析")
+        return True
+
+    return False
+
+
+async def analyze_user_intent(
+    user_description: str,
+    keywords: List[str],
+    qwen_client: Optional[QwenLLM] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    使用Qwen AI分析用户意图并提取结构化信息
+
+    Args:
+        user_description: 用户的完整描述
+        keywords: 初步提取的关键词列表
+        qwen_client: Qwen客户端实例（可选）
+
+    Returns:
+        包含product_name, product_attributes等的字典，失败返回None
+    """
+    try:
+        # 创建Qwen客户端（如果没有提供）
+        if qwen_client is None:
+            qwen_client = QwenLLM(model_name="qwen-max", timeout=30)
+
+        prompt = f"""你是一个视频生成需求分析专家。用户想要生成产品展示视频，请从描述中精准提取关键信息。
+
+用户描述：{user_description}
+初步关键词：{', '.join(keywords)}
+
+请以JSON格式返回（必须是纯JSON，不要包含任何markdown标记）：
+{{
+  "product_name": "核心产品名称（如：投影仪、手机、耳机、音箱）",
+  "product_attributes": ["产品特性关键词列表，如：4K、高清、智能、便携"],
+  "video_style": "视频风格（如：科技感、温馨、动感、专业）",
+  "key_selling_points": ["核心卖点列表"]
+}}
+
+关键要求：
+1. product_name必须是具体的产品名词（投影仪、手机等），不能是形容词
+2. 如果描述中没有明确产品名，设置为null
+3. product_attributes是修饰产品的特性（4K、智能、高清等）
+4. 只返回JSON，不要任何额外文字
+
+示例：
+输入："帮我生成一个10秒的产品展示视频，突出智能投影仪的4K高清特点"
+输出：{{"product_name": "投影仪", "product_attributes": ["智能", "4K", "高清"], "video_style": "科技感", "key_selling_points": ["4K高清显示", "智能功能"]}}"""
+
+        logger.info(f"🤖 [AI意图识别] 开始调用Qwen分析...")
+
+        # 调用Qwen（同步调用，因为QwenLLM.generate是同步的）
+        response = qwen_client.generate(
+            prompt=prompt,
+            max_tokens=500,
+            temperature=0.1  # 低温度，确保输出稳定
+        )
+
+        if not response:
+            logger.warning(f"🤖 [AI意图识别] Qwen返回空响应")
+            return None
+
+        logger.info(f"🤖 [AI意图识别] Qwen原始响应: {response[:200]}...")
+
+        # 解析JSON
+        # 清理可能的markdown标记
+        response_text = response.strip()
+        if response_text.startswith('```json'):
+            response_text = response_text[7:]
+        if response_text.startswith('```'):
+            response_text = response_text[3:]
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]
+        response_text = response_text.strip()
+
+        intent_data = json.loads(response_text)
+
+        logger.info(f"🤖 [AI意图识别] ✅ 解析成功: {intent_data}")
+        return intent_data
+
+    except json.JSONDecodeError as e:
+        logger.error(f"🤖 [AI意图识别] ❌ JSON解析失败: {e}, 响应: {response[:200]}")
+        return None
+    except Exception as e:
+        logger.error(f"🤖 [AI意图识别] ❌ 分析失败: {e}")
+        return None
+
+
 # ============== 后台处理函数（使用DAG并行执行引擎）==============
-async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateRequest'):
+async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateRequest', conversation_context: dict = None):
     """
     VGP视频生成后台处理 - 使用DAG并行执行引擎
     支持节点依赖关系和并行执行
+    支持对话式增量修改
     """
     from database.base import SessionLocal
     from pathlib import Path
@@ -377,8 +500,34 @@ async def process_vgp_video_generation(task_id: str, request: 'VGPGenerateReques
             db, task_id, TaskStatus.COMPLETED,
             progress=100.0,
             message="VGP视频生成完成",
-            result=serialized_results
+            result=serialized_results,
+            output_url=final_video_url  # ✅ 将视频URL保存到output_url字段
         )
+
+        # 💬 如果有会话上下文，保存生成结果到对话管理器
+        if request.session_id:
+            try:
+                from conversation.conversation_manager import conversation_manager
+
+                # 保存生成结果
+                conversation_manager.save_generation_result(
+                    conversation_id=request.session_id,
+                    task_id=task_id,
+                    result={
+                        "video_url": final_video_url,
+                        "video_path": final_video_path,
+                        "theme": request.theme_id,
+                        "duration": request.target_duration_id,
+                        "keywords": request.keywords_id,
+                        "vgp_summary": vgp_summary,
+                        "serialized_results": serialized_results
+                    }
+                )
+
+                logger.info(f"💬 [VGP] Generation result saved to conversation: {request.session_id}")
+
+            except Exception as conv_error:
+                logger.warning(f"⚠️ [VGP] Failed to save to conversation manager: {conv_error}")
 
         await send_callback(task_id, 0, "completed", "VGP视频生成任务完成")
         logger.info(f"🎉 [VGP] Task {task_id} completed successfully!")
@@ -412,13 +561,75 @@ async def generate_video(
     db: Session = Depends(get_db)
 ):
     """
-    VGP新工作流视频生成 - 完全复用 /generate 的逻辑
+    VGP新工作流视频生成 - 支持对话式增量修改
 
-    与 /generate 的唯一区别：执行不同的节点序列（VGP新工作流16节点）
-    处理流程完全相同：创建任务 → 立即返回 → 后台执行
+    与 /generate 的区别：
+    1. 执行不同的节点序列（VGP新工作流16节点）
+    2. 支持通过 session_id 实现对话式视频编辑
     """
     try:
-        # 步骤1: 创建数据库任务（与 /generate 完全相同）
+        # 步骤0: 如果提供了session_id，进行对话分析
+        conversation_context = None
+        if request.session_id:
+            from conversation.conversation_manager import conversation_manager
+
+            # 生成消息ID
+            import uuid
+            message_id = str(uuid.uuid4())
+
+            # 检查是否是同一会话的后续请求（判断是否是编辑）
+            previous_generation = None
+            try:
+                previous_generation = conversation_manager.history_manager.get_previous_generation(
+                    request.session_id
+                )
+            except:
+                pass
+
+            is_regeneration = previous_generation is not None
+
+            # 处理对话请求
+            conversation_context = await conversation_manager.process_conversation_request(
+                request_data=request.dict(),
+                conversation_context={
+                    "conversation_id": request.session_id,
+                    "message_id": message_id,
+                    "is_regeneration": is_regeneration
+                }
+            )
+
+            logger.info(f"📝 [VGP] Conversation context: {conversation_context}")
+
+        # 步骤0.5: AI意图识别兜底（如果前端提取的关键词有问题）
+        if needs_ai_analysis(request.keywords_id):
+            logger.info(f"🤖 [VGP] 触发AI意图识别 - 原始关键词: {request.keywords_id}")
+
+            intent_result = await analyze_user_intent(
+                user_description=request.user_description_id,
+                keywords=request.keywords_id
+            )
+
+            if intent_result and intent_result.get('product_name'):
+                # 重新组织关键词：产品名在前，属性在后
+                optimized_keywords = [intent_result['product_name']]
+                if intent_result.get('product_attributes'):
+                    optimized_keywords.extend(intent_result['product_attributes'])
+
+                # 去重
+                optimized_keywords = list(dict.fromkeys(optimized_keywords))
+
+                logger.info(f"🤖 [VGP] ✅ AI优化关键词: {request.keywords_id} → {optimized_keywords}")
+                request.keywords_id = optimized_keywords
+
+                # 可选：也可以优化theme
+                if intent_result.get('video_style'):
+                    logger.info(f"🤖 [VGP] 视频风格建议: {intent_result['video_style']}")
+            else:
+                logger.warning(f"🤖 [VGP] ⚠️ AI意图识别未返回有效结果，使用原始关键词")
+        else:
+            logger.info(f"✅ [VGP] 关键词提取正常，跳过AI分析: {request.keywords_id}")
+
+        # 步骤1: 创建数据库任务
         task = TaskService.create_task(
             db=db,
             theme=request.theme_id,
@@ -429,25 +640,33 @@ async def generate_video(
 
         logger.info(f"🚀 [VGP] Starting video generation task: {task.task_id}")
 
-        # 步骤2: 添加后台任务处理（与 /generate 完全相同）
+        # 将 conversation_context 传递给后台任务
+        if conversation_context:
+            # 暂存到任务元数据或其他地方
+            # 这里简单起见，我们将在后台处理函数中重新获取
+            pass
+
+        # 步骤2: 添加后台任务处理
         background_tasks.add_task(
             process_vgp_video_generation,
             task_id=task.task_id,
-            request=request
+            request=request,
+            conversation_context=conversation_context
         )
 
-        # 步骤3: 立即返回响应（与 /generate 完全相同的模式）
+        # 步骤3: 立即返回响应
         return VGPGenerateResponse(
             success=True,
             instance_id=task.task_id,
             task_id=task.task_id,
-            message=f"VGP视频生成任务已启动（模板: {request.template}）",
+            message=f"VGP视频生成任务已启动（模板: {request.template}）" +
+                    (f"，会话ID: {request.session_id}" if request.session_id else ""),
             status="started",
             estimated_time=request.target_duration_id * 2
         )
 
     except Exception as e:
-        logger.info(f"❌ [VGP] Failed to create task: {e}")
+        logger.error(f"❌ [VGP] Failed to create task: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create VGP task: {str(e)}")
 
 
@@ -496,6 +715,447 @@ async def health_check(db: Session = Depends(get_db)):
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+
+
+# ============== 对话管理相关API ==============
+
+@vgp_router.get("/conversation/{session_id}/context")
+async def get_conversation_context(session_id: str):
+    """
+    获取对话上下文信息
+
+    Args:
+        session_id: 会话ID
+
+    Returns:
+        对话的上下文信息，包括消息数量、生成数量等
+    """
+    try:
+        from conversation.conversation_manager import conversation_manager
+
+        context = conversation_manager.history_manager.get_conversation_context(session_id)
+
+        return {
+            "success": True,
+            "context": context,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"❌ [VGP] Failed to get conversation context: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get conversation context: {str(e)}")
+
+
+@vgp_router.get("/conversation/{session_id}/history")
+async def get_conversation_history(session_id: str):
+    """
+    获取对话历史
+
+    Args:
+        session_id: 会话ID
+
+    Returns:
+        完整的对话历史，包括所有消息和生成结果
+    """
+    try:
+        from conversation.conversation_manager import conversation_manager
+
+        conversation = conversation_manager.history_manager.get_or_create_conversation(session_id)
+
+        return {
+            "success": True,
+            "conversation_id": session_id,
+            "messages": conversation.messages,
+            "generation_history": conversation.generation_history,
+            "current_context": conversation.current_context,
+            "created_at": conversation.created_at.isoformat(),
+            "updated_at": conversation.updated_at.isoformat(),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"❌ [VGP] Failed to get conversation history: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get conversation history: {str(e)}")
+
+
+@vgp_router.get("/conversation/{session_id}/latest-video")
+async def get_latest_video(session_id: str):
+    """
+    获取会话中最新生成的视频
+
+    Args:
+        session_id: 会话ID
+
+    Returns:
+        最新的视频生成结果
+    """
+    try:
+        from conversation.conversation_manager import conversation_manager
+
+        previous_generation = conversation_manager.history_manager.get_previous_generation(session_id)
+
+        if not previous_generation:
+            raise HTTPException(status_code=404, detail="No video found for this session")
+
+        return {
+            "success": True,
+            "video": previous_generation,
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [VGP] Failed to get latest video: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get latest video: {str(e)}")
+
+
+# ============== Timeline提交到IMS ==============
+
+class IMSClip(BaseModel):
+    """IMS视频片段"""
+    MediaURL: str
+    TimelineIn: float
+    TimelineOut: float
+    In: float
+    Out: float
+    Volume: float = 100.0
+    Speed: float = 1.0
+    Effects: Optional[List[Dict[str, Any]]] = None
+
+
+class IMSVideoTrack(BaseModel):
+    """IMS视频轨道"""
+    VideoTrackClips: List[IMSClip]
+
+
+class IMSSubmitRequest(BaseModel):
+    """IMS提交请求"""
+    VideoTracks: List[IMSVideoTrack]
+    OutputConfig: Optional[Dict[str, Any]] = None
+
+
+class IMSSubmitResponse(BaseModel):
+    """IMS提交响应"""
+    success: bool
+    message: str
+    job_id: Optional[str] = None
+    timeline_data: Optional[Dict[str, Any]] = None
+
+
+@vgp_router.post("/submit", response_model=IMSSubmitResponse)
+async def submit_timeline_to_ims(request: IMSSubmitRequest):
+    """
+    提交已编辑的Timeline到阿里云IMS进行云端剪辑
+
+    这个接口接收前端视频编辑器编辑好的Timeline数据（IMS格式），
+    然后调用阿里云IMS API提交剪辑任务。
+
+    Args:
+        request: IMS格式的Timeline数据
+
+    Returns:
+        提交结果，包含任务ID和状态
+    """
+    try:
+        logger.info("=" * 80)
+        logger.info("[VGP] 收到IMS Timeline提交请求")
+        logger.info("=" * 80)
+
+        # 验证数据
+        if not request.VideoTracks:
+            raise HTTPException(status_code=400, detail="VideoTracks不能为空")
+
+        # 打印接收到的数据
+        logger.info(f"[VGP] 视频轨道数量: {len(request.VideoTracks)}")
+        for i, track in enumerate(request.VideoTracks):
+            logger.info(f"\n[VGP] 轨道 {i + 1}:")
+            logger.info(f"  片段数量: {len(track.VideoTrackClips)}")
+            for j, clip in enumerate(track.VideoTrackClips):
+                logger.info(f"\n  片段 {j + 1}:")
+                logger.info(f"    MediaURL: {clip.MediaURL}")
+                logger.info(f"    时间轴: {clip.TimelineIn}s - {clip.TimelineOut}s")
+                logger.info(f"    素材裁剪: In={clip.In}s, Out={clip.Out}s")
+                logger.info(f"    音量: {clip.Volume}")
+                logger.info(f"    速���: {clip.Speed}")
+                if clip.Effects:
+                    logger.info(f"    特效数量: {len(clip.Effects)}")
+
+        # 调用阿里云IMS API进行云端剪辑
+        logger.info("\n" + "=" * 80)
+        logger.info("[VGP] 开始提交到阿里云IMS")
+        logger.info("=" * 80)
+
+        import os
+        import json
+        from alibabacloud_ice20201109 import client as ice_client, models as ice_models
+        from alibabacloud_tea_openapi import models as open_api_models
+
+        # 检查是否配置了阿里云凭证
+        access_key_id = os.getenv("OSS_ACCESS_KEY_ID")
+        access_key_secret = os.getenv("OSS_ACCESS_KEY_SECRET")
+
+        if not access_key_id or not access_key_secret:
+            logger.warning("[VGP] ⚠️ 未配置阿里云凭证，使用模拟模式")
+            # 模拟模式
+            response = IMSSubmitResponse(
+                success=True,
+                message="Timeline已成功提交到IMS（模拟模式 - 未配置阿里云凭证）",
+                job_id=f"mock_ims_job_{uuid.uuid4().hex[:8]}",
+                timeline_data=request.dict()
+            )
+            logger.info(f"\n✅ [VGP] 模拟提交成功，任务ID: {response.job_id}\n")
+            return response
+
+        # 初始化IMS客户端
+        config = open_api_models.Config(
+            access_key_id=access_key_id,
+            access_key_secret=access_key_secret,
+            region_id='cn-shanghai',
+            endpoint='ice.cn-shanghai.aliyuncs.com'
+        )
+        ims_client = ice_client.Client(config)
+
+        # 构建Timeline（将Pydantic模型转换为字典）
+        timeline = {
+            "VideoTracks": [
+                {
+                    "VideoTrackClips": [
+                        {
+                            "MediaURL": clip.MediaURL,
+                            "TimelineIn": clip.TimelineIn,
+                            "TimelineOut": clip.TimelineOut,
+                            "In": clip.In,
+                            "Out": clip.Out,
+                            "Volume": clip.Volume,
+                            "Speed": clip.Speed,
+                            "Effects": clip.Effects if clip.Effects else []
+                        }
+                        for clip in track.VideoTrackClips
+                    ]
+                }
+                for track in request.VideoTracks
+            ]
+        }
+
+        # 构建输出配置
+        if request.OutputConfig:
+            output_config = request.OutputConfig
+        else:
+            # 默认输出配置
+            import time
+            timestamp = int(time.time())
+            output_config = {
+                "MediaURL": f"https://ai-movie-cloud-v2.oss-cn-shanghai.aliyuncs.com/edited_videos/video_{timestamp}.mp4",
+                "Width": 1280,
+                "Height": 720
+            }
+
+        logger.info(f"[VGP] Timeline: {json.dumps(timeline, indent=2, ensure_ascii=False)}")
+        logger.info(f"[VGP] OutputConfig: {json.dumps(output_config, indent=2, ensure_ascii=False)}")
+
+        # 提交剪辑任务
+        submit_request = ice_models.SubmitMediaProducingJobRequest(
+            timeline=json.dumps(timeline, ensure_ascii=False),
+            output_media_config=json.dumps(output_config, ensure_ascii=False)
+        )
+
+        submit_response = ims_client.submit_media_producing_job(submit_request)
+
+        if submit_response.status_code == 200:
+            job_id = submit_response.body.job_id
+            logger.info(f"✅ [VGP] IMS任务已提交成功")
+            logger.info(f"   JobId: {job_id}")
+            logger.info(f"   输出URL: {output_config.get('MediaURL')}")
+
+            response = IMSSubmitResponse(
+                success=True,
+                message=f"Timeline已成功提交到阿里云IMS，任务ID: {job_id}",
+                job_id=job_id,
+                timeline_data={
+                    "timeline": timeline,
+                    "output_config": output_config
+                }
+            )
+
+            logger.info(f"\n✅ [VGP] 提交成功，任务ID: {response.job_id}\n")
+            return response
+        else:
+            raise Exception(f"IMS API返回错误: status_code={submit_response.status_code}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [VGP] 提交失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"提交到IMS失败: {str(e)}"
+        )
+
+
+class IMSJobStatusResponse(BaseModel):
+    """IMS任务状态响应"""
+    success: bool
+    job_id: str
+    status: str  # Init, Running, Success, Failed
+    message: Optional[str] = None
+    video_url: Optional[str] = None
+    progress: Optional[float] = None
+
+
+class VideoUploadResponse(BaseModel):
+    """视频上传响应"""
+    success: bool
+    url: str
+    message: str
+
+
+@vgp_router.post("/upload-video", response_model=VideoUploadResponse)
+async def upload_video_to_oss(request: Request):
+    """
+    上传视频到OSS
+
+    接收前端发送的视频文件，上传到阿里云OSS，返回公网URL
+
+    Args:
+        request: FastAPI Request对象，从中读取原始二进制数据
+
+    Returns:
+        上传后的OSS公网URL
+    """
+    try:
+        import tempfile
+        import os
+        from pathlib import Path
+        from utils.oss_uploader import get_oss_uploader
+
+        logger.info("[VGP] 收到视频上传请求")
+
+        # 读取原始请求体（二进制数据）
+        file_data = await request.body()
+
+        if not file_data:
+            raise HTTPException(status_code=400, detail="未收到视频文件")
+
+        # 创建临时文件
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
+            temp_file.write(file_data)
+            temp_path = temp_file.name
+
+        try:
+            # 上传到OSS
+            logger.info(f"[VGP] 正在上传视频到OSS... (大小: {len(file_data) / 1024 / 1024:.2f} MB)")
+
+            uploader = get_oss_uploader()
+            oss_url = uploader.upload_video(temp_path)
+
+            logger.info(f"[VGP] ✅ 视频上传成功: {oss_url}")
+
+            return VideoUploadResponse(
+                success=True,
+                url=oss_url,
+                message="视频上传成功"
+            )
+
+        finally:
+            # 删除临时文件
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    except Exception as e:
+        logger.error(f"❌ [VGP] 视频上传失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"视频上传失败: {str(e)}"
+        )
+
+
+@vgp_router.get("/submit/{job_id}/status", response_model=IMSJobStatusResponse)
+async def get_ims_job_status(job_id: str):
+    """
+    查询IMS剪辑任务的状态
+
+    Args:
+        job_id: IMS任务ID
+
+    Returns:
+        任务状态信息
+    """
+    try:
+        logger.info(f"[VGP] 查询IMS任务状态: {job_id}")
+
+        import os
+        from alibabacloud_ice20201109 import client as ice_client, models as ice_models
+        from alibabacloud_tea_openapi import models as open_api_models
+
+        # 检查是否是模拟任务
+        if job_id.startswith("mock_"):
+            return IMSJobStatusResponse(
+                success=True,
+                job_id=job_id,
+                status="Success",
+                message="模拟任务（未实际提交到IMS）",
+                video_url="https://example.com/mock_video.mp4",
+                progress=100.0
+            )
+
+        # 检查是否配置了阿里云凭证
+        access_key_id = os.getenv("OSS_ACCESS_KEY_ID")
+        access_key_secret = os.getenv("OSS_ACCESS_KEY_SECRET")
+
+        if not access_key_id or not access_key_secret:
+            raise HTTPException(
+                status_code=400,
+                detail="未配置阿里云凭证，无法查询任务状态"
+            )
+
+        # 初始化IMS客户端
+        config = open_api_models.Config(
+            access_key_id=access_key_id,
+            access_key_secret=access_key_secret,
+            region_id='cn-shanghai',
+            endpoint='ice.cn-shanghai.aliyuncs.com'
+        )
+        ims_client = ice_client.Client(config)
+
+        # 查询任务状态
+        request = ice_models.GetMediaProducingJobRequest(job_id=job_id)
+        response = ims_client.get_media_producing_job(request)
+
+        if response.status_code == 200:
+            job = response.body.media_producing_job
+            status = job.status
+
+            # 计算进度
+            progress = 0.0
+            if status == "Init":
+                progress = 10.0
+            elif status == "Running":
+                progress = 50.0
+            elif status == "Success":
+                progress = 100.0
+            elif status == "Failed":
+                progress = 0.0
+
+            result = IMSJobStatusResponse(
+                success=True,
+                job_id=job_id,
+                status=status,
+                message=getattr(job, 'message', None),
+                video_url=getattr(job, 'media_url', None) if status == "Success" else None,
+                progress=progress
+            )
+
+            logger.info(f"[VGP] 任务状态: {status}, 进度: {progress}%")
+            return result
+        else:
+            raise Exception(f"查询任务状态失败: status_code={response.status_code}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [VGP] 查询任务状态失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"查询任务状态失败: {str(e)}"
+        )
 
 
 # 如果直接运行此文件，启动FastAPI服务器
