@@ -1158,6 +1158,87 @@ async def get_ims_job_status(job_id: str):
         )
 
 
+# ============== 图片上传接口 ==============
+
+@vgp_router.post("/upload-image", summary="上传图片到OSS")
+async def upload_image(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    上传图片到阿里云OSS
+
+    接收表单数据中的图片文件，上传到OSS并返回公网URL
+    """
+    import os
+    from fastapi import UploadFile, File, Form
+    from utils.oss_uploader import get_oss_uploader
+    import tempfile
+
+    try:
+        # 获取表单数据
+        form = await request.form()
+        file = form.get("file")
+
+        if not file:
+            raise HTTPException(status_code=400, detail="未找到上传的文件")
+
+        # 检查是否配置了OSS
+        if not os.getenv("OSS_ACCESS_KEY_ID"):
+            raise HTTPException(
+                status_code=503,
+                detail="OSS未配置，请联系管理员配置 OSS_ACCESS_KEY_ID 和 OSS_ACCESS_KEY_SECRET"
+            )
+
+        # 验证文件类型
+        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"不支持的文件类型: {file.content_type}，仅支持 jpg, png, webp, gif"
+            )
+
+        # 验证文件大小（最大5MB）
+        content = await file.read()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="文件大小不能超过5MB")
+
+        # 保存到临时文件
+        suffix = os.path.splitext(file.filename)[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+
+        try:
+            # 上传到OSS
+            uploader = get_oss_uploader()
+            url = uploader.upload_image(tmp_path)
+
+            logger.info(f"✅ [VGP] 图片上传成功: {file.filename} -> {url}")
+
+            return {
+                "success": True,
+                "url": url,
+                "filename": file.filename,
+                "size": len(content),
+                "message": "图片上传成功"
+            }
+
+        finally:
+            # 清理临时文件
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [VGP] 图片上传失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"图片上传失败: {str(e)}"
+        )
+
+
 # 如果直接运行此文件，启动FastAPI服务器
 if __name__ == "__main__":
     import uvicorn
